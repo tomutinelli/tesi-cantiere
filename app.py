@@ -1,13 +1,15 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
+import plotly.graph_objects as go
+from datetime import datetime, date
 import os
+import io
 
 # Impostazioni della pagina
 st.set_page_config(page_title="EcoSite Tracker | LCA Dashboard", layout="wide")
 
-# --- STILE CSS MINIMAL E MODERNO ---
+# --- STILE CSS MINIMAL E MODERNO CON PALLINO RADIO VERDE PASTELLO ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
@@ -44,10 +46,15 @@ st.markdown("""
         color: #1f2937;
     }
 
-    .stRadio label, .stNumberInput label, .stDateInput label, .stFileUploader label {
+    .stRadio label, .stNumberInput label, .stDateInput label, .stFileUploader label, .stSelectbox label {
         font-weight: 500;
         font-size: 0.9rem;
         color: #4b5563;
+    }
+
+    /* Personalizzazione colore pallino radio button in verde pastello */
+    div.stRadio input[type="radio"] {
+        accent-color: #82e0aa !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -58,7 +65,6 @@ with st.expander("Note metodologiche e specifiche di utilizzo"):
     <p style='color: #4b5563; font-size: 0.95rem; line-height: 1.6; margin-bottom: 0;'>
     Questo strumento calcola l'impronta di carbonio ($\text{CO}_2eq$) in fase di progetto incrociando i dati di consumo giornaliero con il database LCI di riferimento. 
     Il file CSV di progetto deve essere strutturato in 4 colonne: <code>Data</code> (AAAA-MM-GG), <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code>.
-    I parametri gestiti comprendono: Materiali, Rifiuti, Trasporti, Macchinari, Energia e Acqua.
     </p>
     """, unsafe_allow_html=True)
 
@@ -83,22 +89,23 @@ col_cfg1, col_cfg2 = st.columns([2, 1])
 with col_cfg1:
     if "Lineare" in tipo_cantiere:
         unita = "m"
-        descrizione_unita = "metro lineare"
         dimensione_cantiere = st.number_input("Estensione longitudinale complessiva (metri)", min_value=0.1, value=100.0, step=1.0)
     else:
         unita = "m²"
-        descrizione_unita = "metro quadro"
         dimensione_cantiere = st.number_input("Superficie coperta complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- LETTURA DATABASE LCI CORRETTA ---
+# --- LETTURA DATABASE LCI ---
 @st.cache_data
 def carica_database_lci(percorso_file):
     if not os.path.exists(percorso_file):
         return None
-    xls = pd.ExcelFile(percorso_file)
+    try:
+        xls = pd.ExcelFile(percorso_file)
+    except Exception:
+        return None
+        
     df_inv = pd.DataFrame()
-    
     mappatura = {
         'Materiali': {'nome_elemento': 'nome_materiale', 'nome_fattore': 'emissioni_kg_co2eq_kg'},
         'Rifiuti': {'nome_elemento': 'tipo_rifiuto', 'nome_fattore': 'emissioni_kg_co2eq_kg'},
@@ -117,7 +124,7 @@ def carica_database_lci(percorso_file):
             col_el = mappatura[foglio]['nome_elemento']
             col_fat = mappatura[foglio]['nome_fattore']
             if foglio in ['Trasporti', 'Macchinari']:
-                df_temp = df_temp.iloc[0:9].copy() # Prende la tabella superiore dei combustibili puri (incluso Diesel)
+                df_temp = df_temp.iloc[0:9].copy()
         else:
             possibili_nomi_elemento = ['Elemento', 'Macchinario', 'Nome', 'Acqua', 'Tipo', 'Fuel']
             possibili_nomi_fattore = ['Fattore_Emissione', 'kg CO2eq', 'Emissione', 'emissioni_kg_co2eq_kg', 'kg co2 per kg of fuel']
@@ -140,8 +147,8 @@ def carica_database_lci(percorso_file):
 percorso_lci = "LCI.xlsx"
 df_inventario = carica_database_lci(percorso_lci)
 
-if df_inventario is None:
-    st.error(f"Errore critico: Il database '{percorso_lci}' non è reperibile sul server.")
+if df_inventario is None or df_inventario.empty:
+    st.error(f"Errore critico: Il database '{percorso_lci}' non è reperibile o non è valido sul server.")
     st.stop()
 
 # --- CARICAMENTO CSV UTENTE ---
@@ -171,7 +178,7 @@ if file_cantiere:
         df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
         df_completo['CO2_Normalizzata'] = df_completo['CO2_Totale_kg'] / dimensione_cantiere
         
-        # --- FILTRO TEMPORALE ---
+        # --- FILTRO TEMPORALE SICURO ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
         st.subheader("Filtro Temporale")
         st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 15px;'>Seleziona l'arco temporale di interesse per l'analisi.</p>", unsafe_allow_html=True)
@@ -187,12 +194,16 @@ if file_cantiere:
             label_visibility="collapsed"
         )
 
-        if len(date_range) == 2:
+        if isinstance(date_range, tuple) and len(date_range) == 2:
             start_date, end_date = date_range
             mask = (df_completo['Data_dt'].dt.date >= start_date) & (df_completo['Data_dt'].dt.date <= end_date)
             df_filtrato = df_completo.loc[mask].copy()
+        elif isinstance(date_range, date):
+            mask = (df_completo['Data_dt'].dt.date == date_range)
+            df_filtrato = df_completo.loc[mask].copy()
         else:
             df_filtrato = df_completo.copy()
+            
         st.markdown("</div>", unsafe_allow_html=True)
 
         # --- VISUALIZZAZIONE GRAFICI ---
@@ -203,29 +214,68 @@ if file_cantiere:
         if df_filtrato.empty:
             st.warning("Nessuna evidenza registrata nell'intervallo temporale selezionato.")
         else:
+            modo_visualizzazione = st.selectbox(
+                "Modalità di visualizzazione grafica",
+                options=["Standard (Barre temporali)", "Distribuzione (KDE / Frequenza)", "Linea Media (Andamento con media mobile)"],
+                index=0
+            )
+
+            def genera_figura(df_dat, x_col, y_col, titolo, colore_base):
+                df_dat = df_dat.copy()
+                if df_dat.empty:
+                    return go.Figure()
+                    
+                if "Distribuzione" in modo_visualizzazione:
+                    fig = px.histogram(
+                        df_dat, x=y_col, nbins=20, marginal="violin",
+                        title=f"{titolo} - Distribuzione Frazionale",
+                        labels={y_col: f'kg CO₂e / {unita}', 'count': 'Frequenza'},
+                        color_discrete_sequence=[colore_base]
+                    )
+                elif "Media" in modo_visualizzazione:
+                    df_dat = df_dat.sort_values(by=x_col)
+                    df_dat['Media_Mobile'] = df_dat[y_col].rolling(window=7, min_periods=1).mean()
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Valore Giornaliero', marker_color=colore_base, opacity=0.4))
+                    fig.add_trace(go.Scatter(x=df_dat[x_col], y=df_dat['Media_Mobile'], mode='lines', name='Linea Media (7gg)', line=dict(color='#111827', width=3)))
+                    fig.update_layout(title=f"{titolo} - Andamento con Linea Media")
+                else:
+                    fig = px.bar(
+                        df_dat, x=x_col, y=y_col,
+                        title=titolo,
+                        labels={y_col: f'kg CO₂e / {unita}', x_col: ''},
+                        text_auto='.2f'
+                    )
+                    fig.update_traces(marker_color=colore_base)
+                
+                fig.update_layout(
+                    height=380, 
+                    font_family="Inter", 
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    title_font_size=14,
+                    title_font_color="#374151"
+                )
+                return fig
+
             # Grafico Totale
             df_totale = df_filtrato.groupby('Data')['CO2_Normalizzata'].sum().reset_index()
-            fig_tot = px.bar(
-                df_totale, x='Data', y='CO2_Normalizzata',
-                title=f"Andamento Complessivo (kg CO₂e / {unita})",
-                labels={'CO2_Normalizzata': f'kg CO₂e / {unita}', 'Data': ''},
-                text_auto='.2f'
-            )
-            fig_tot.update_traces(marker_color="#0B0752")
-            fig_tot.update_layout(
-                height=380, 
-                font_family="Inter", 
-                plot_bgcolor='rgba(0,0,0,0)', 
-                paper_bgcolor='rgba(0,0,0,0)',
-                title_font_size=14,
-                title_font_color="#374151"
-            )
+            fig_tot = genera_figura(df_totale, 'Data', 'CO2_Normalizzata', f"Andamento Complessivo (kg CO₂e / {unita})", "#0B0752")
             st.plotly_chart(fig_tot, use_container_width=True)
+
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                csv_totale = df_totale.to_csv(index=False).encode('utf-8')
+                st.download_button("Scarica dati totali (CSV)", csv_totale, "emissioni_totali_giornaliere.csv", "text/csv")
+            with col_exp2:
+                output_xlsx = io.BytesIO()
+                with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer:
+                    df_totale.to_excel(writer, index=False, sheet_name='Totale Giornaliero')
+                st.download_button("Scarica dati totali (XLSX)", output_xlsx.getvalue(), "emissioni_totali_giornaliere.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
             st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
             st.subheader("Disaggregazione per Categoria")
             
-            # Palette cromatica personalizzata
             colori_parametri = {
                 'Materiali': "#B80D0D", 
                 'Rifiuti': "#078303", 
@@ -240,27 +290,25 @@ if file_cantiere:
             
             for idx, param in enumerate(parametri_presenti):
                 df_p = df_filtrato[df_filtrato['Parametro'] == param].groupby('Data')['CO2_Normalizzata'].sum().reset_index()
-                fig = px.bar(
-                    df_p, x='Data', y='CO2_Normalizzata',
-                    title=f"{param}",
-                    labels={'CO2_Normalizzata': f'kg CO₂e / {unita}', 'Data': ''},
-                    text_auto='.2f'
-                )
-                fig.update_traces(marker_color=colori_parametri.get(param, '#4b5563'))
-                fig.update_layout(
-                    height=300, 
-                    font_family="Inter", 
-                    plot_bgcolor='rgba(0,0,0,0)', 
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    title_font_size=13,
-                    title_font_color="#4b5563"
-                )
-                col_grafici[idx % 2].plotly_chart(fig, use_container_width=True)
+                colore_cat = colori_parametri.get(param, '#4b5563')
+                
+                fig_cat = genera_figura(df_p, 'Data', 'CO2_Normalizzata', f"{param}", colore_cat)
+                
+                with col_grafici[idx % 2]:
+                    st.plotly_chart(fig_cat, use_container_width=True)
+                    csv_cat = df_p.to_csv(index=False).encode('utf-8')
+                    st.download_button(f"Scarica dati {param} (CSV)", csv_cat, f"dati_{param.lower()}.csv", "text/csv", key=f"dl_{param}")
 
-            # Tabella Dati
+            # Tabella Dati Globale
             st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
             with st.expander("Esporta / Visualizza matrice dati completa"):
                 st.dataframe(df_filtrato.drop(columns=['Data_dt']), use_container_width=True)
+                
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    df_filtrato.drop(columns=['Data_dt']).to_excel(writer, index=False, sheet_name='Dettaglio Completo')
+                st.download_button("Scarica intero dataset filtrato (XLSX)", excel_buffer.getvalue(), "dataset_completo_lca.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
         st.markdown("</div>", unsafe_allow_html=True)
 
     except Exception as e:
