@@ -9,7 +9,7 @@ import io
 # Impostazioni della pagina
 st.set_page_config(page_title="EcoSite Tracker | LCA Dashboard", layout="wide")
 
-# --- STILE CSS DEFINITIVO CON VERDE PASTELLO ---
+# --- STILE CSS CORRETTO PER FORZARE IL VERDE PASTELLO SU RADIO E CASELLE ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
@@ -24,10 +24,10 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
-    /* Card minimaliste con bordo verde pastello */
+    /* Card minimaliste */
     div.minimal-card {
         background-color: #ffffff !important;
-        border: 1.5px solid #d5ddd1 !important;
+        border: 2px solid #d5ddd1 !important;
         border-radius: 8px !important;
         padding: 32px !important;
         box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.01) !important;
@@ -53,32 +53,23 @@ st.markdown("""
         color: #4b5563;
     }
 
-    /* Stile per i Bottoni Nativi (Download e Link) in Verde Pastello */
-    [data-testid="stDownloadButton"] button, 
-    [data-testid="stLinkButton"] button {
-        background-color: #ffffff !important;
-        border: 1.5px solid #d5ddd1 !important;
-        color: #374151 !important;
-        border-radius: 8px !important;
-        transition: all 0.25s ease-in-out !important;
-        font-weight: 500 !important;
-        width: 100% !important;
-    }
+    /* --- INIZIO CORREZIONE COLORI STREAMLIT --- */
     
-    [data-testid="stDownloadButton"] button:hover, 
-    [data-testid="stLinkButton"] button:hover {
-        border-color: #a7b89f !important;
-        background-color: #f4f7f3 !important;
-        color: #111827 !important;
+    /* Forza il verde pastello sul pallino del Radio Button quando è selezionato */
+    div[data-baseweb="radio"] [aria-checked="true"] > div:first-child {
+        background-color: #d5ddd1 !important;
+        border-color: #d5ddd1 !important;
     }
 
-    /* Rimuove l'alone rosso/blu quando si clicca il bottone */
-    [data-testid="stDownloadButton"] button:focus:not(:active), 
-    [data-testid="stLinkButton"] button:focus:not(:active) {
-        border-color: #a7b89f !important;
-        box-shadow: 0 0 0 1px #a7b89f !important;
-        color: #374151 !important;
+    /* Forza il verde pastello sul contorno della casella numerica quando ci clicchi dentro (Focus) */
+    div[data-baseweb="input"]:focus-within,
+    div[data-baseweb="base-input"]:focus-within {
+        border-color: #d5ddd1 !important;
+        box-shadow: 0 0 0 1px #d5ddd1 !important;
     }
+    
+    /* --- FINE CORREZIONE --- */
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,7 +106,7 @@ with col_cfg1:
         dimensione_cantiere = st.number_input("Estensione longitudinale complessiva (metri)", min_value=0.1, value=100.0, step=1.0)
     else:
         unita = "m²"
-        dimensione_cantiere = st.number_input("Superficie coperta complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
+        dimensione_cantiere = st.number_input("Area di cantiere complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- LETTURA DATABASE LCI ---
@@ -201,7 +192,7 @@ if file_cantiere:
         df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
         df_completo['CO2_Normalizzata'] = df_completo['CO2_Totale_kg'] / dimensione_cantiere
         
-        # --- FILTRO TEMPORALE ---
+        # --- FILTRO TEMPORALE SICURO ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
         st.subheader("Filtro Temporale")
         st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 15px;'>Seleziona l'arco temporale di interesse per l'analisi.</p>", unsafe_allow_html=True)
@@ -229,18 +220,9 @@ if file_cantiere:
             
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # --- VISUALIZZAZIONE GRAFICI E DOWNLOAD ---
+        # --- VISUALIZZAZIONE GRAFICI ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-        
-        # LINK PER USCIRE DA WIX IN CASO DI BLOCCO
-        col_title, col_link = st.columns([2, 1])
-        with col_title:
-            st.subheader("Risultati Analitici")
-        with col_link:
-            # INSERISCI QUI IL TUO LINK REALE DI STREAMLIT
-            link_app = "https://tesi-cantiere-ljwvve5ibhwfanemfr3vml.streamlit.app" 
-            st.link_button("Apri a schermo intero per esportare", link_app)
-            
+        st.subheader("Risultati Analitici")
         st.markdown(f"<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 25px;'>I valori visualizzati esprimono l'incidenza normalizzata rispetto all'unità funzionale complessiva (<b>{dimensione_cantiere} {unita}</b>).</p>", unsafe_allow_html=True)
         
         if df_filtrato.empty:
@@ -356,7 +338,7 @@ if file_cantiere:
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                     df_filtrato.drop(columns=['Data_dt']).to_excel(writer, index=False, sheet_name='Dettaglio Completo')
-                st.download_button("Scarica dataset filtrato (XLSX)", data=excel_buffer.getvalue(), file_name="dataset_completo_lca.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_full_xlsx")
+                st.download_button("Scarica intero dataset filtrato (XLSX)", data=excel_buffer.getvalue(), file_name="dataset_completo_lca.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_full_xlsx")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
