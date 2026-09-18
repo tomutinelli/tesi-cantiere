@@ -106,7 +106,7 @@ with col_cfg1:
         dimensione_cantiere = st.number_input("Estensione longitudinale complessiva (metri)", min_value=0.1, value=100.0, step=1.0)
     else:
         unita = "m²"
-        dimensione_cantiere = st.number_input("Superficie coperta complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
+        dimensione_cantiere = st.number_input("Area di cantiere complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- LETTURA DATABASE LCI ---
