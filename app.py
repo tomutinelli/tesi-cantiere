@@ -5,11 +5,12 @@ import plotly.graph_objects as go
 from datetime import datetime, date
 import os
 import io
+import base64
 
 # Impostazioni della pagina
 st.set_page_config(page_title="EcoSite Tracker | LCA Dashboard", layout="wide")
 
-# --- STILE CSS CORRETTO PER FORZARE IL VERDE PASTELLO SU RADIO E CASELLE ---
+# --- STILE CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
@@ -24,10 +25,10 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
-    /* Card minimaliste */
+    /* Card minimaliste con bordo verde pastello */
     div.minimal-card {
         background-color: #ffffff !important;
-        border: 2px solid #d5ddd1 !important;
+        border: 1.5px solid #d5ddd1 !important;
         border-radius: 8px !important;
         padding: 32px !important;
         box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.01) !important;
@@ -53,25 +54,42 @@ st.markdown("""
         color: #4b5563;
     }
 
-    /* --- INIZIO CORREZIONE COLORI STREAMLIT --- */
-    
-    /* Forza il verde pastello sul pallino del Radio Button quando è selezionato */
-    div[data-baseweb="radio"] [aria-checked="true"] > div:first-child {
-        background-color: #d5ddd1 !important;
-        border-color: #d5ddd1 !important;
+    /* Pulsanti di download stilizzati (Design moderno) */
+    .custom-dl-btn {
+        text-decoration: none !important;
+        background-color: #ffffff !important;
+        border: 1.5px solid #d5ddd1 !important;
+        color: #374151 !important;
+        padding: 0.6rem 1rem !important;
+        border-radius: 8px !important;
+        font-size: 0.9rem !important;
+        font-weight: 500 !important;
+        display: block !important;
+        text-align: center !important;
+        width: 100% !important;
+        margin-top: 8px !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02) !important;
+        transition: all 0.25s ease-in-out !important;
+        letter-spacing: 0.3px !important;
     }
-
-    /* Forza il verde pastello sul contorno della casella numerica quando ci clicchi dentro (Focus) */
-    div[data-baseweb="input"]:focus-within,
-    div[data-baseweb="base-input"]:focus-within {
-        border-color: #d5ddd1 !important;
-        box-shadow: 0 0 0 1px #d5ddd1 !important;
-    }
     
-    /* --- FINE CORREZIONE --- */
-
+    /* Effetto Hover sul pulsante */
+    .custom-dl-btn:hover {
+        border-color: #a7b89f !important;
+        background-color: #f4f7f3 !important; /* Verdino pastello chiarissimo */
+        color: #111827 !important;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.06) !important;
+        transform: translateY(-2px) !important;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# --- FUNZIONE DOWNLOAD BASE64 CON TARGET TOP ---
+def genera_link_download(data_bytes, filename, button_text):
+    b64 = base64.b64encode(data_bytes).decode()
+    mime = "text/csv" if filename.endswith('.csv') else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    # Il target="_top" forza il browser a scavalcare l'iframe di Wix per eseguire il download
+    return f'<a class="custom-dl-btn" href="data:{mime};base64,{b64}" download="{filename}" target="_top">{button_text}</a>'
 
 # --- GUIDA METODOLOGICA ---
 with st.expander("Note metodologiche e specifiche di utilizzo"):
@@ -106,7 +124,7 @@ with col_cfg1:
         dimensione_cantiere = st.number_input("Estensione longitudinale complessiva (metri)", min_value=0.1, value=100.0, step=1.0)
     else:
         unita = "m²"
-        dimensione_cantiere = st.number_input("Area di cantiere complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
+        dimensione_cantiere = st.number_input("Superficie coperta complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- LETTURA DATABASE LCI ---
@@ -297,12 +315,12 @@ if file_cantiere:
             col_exp1, col_exp2 = st.columns(2)
             with col_exp1:
                 csv_totale = df_totale.to_csv(index=False).encode('utf-8')
-                st.download_button("Scarica dati totali (CSV)", data=csv_totale, file_name="emissioni_totali_giornaliere.csv", mime="text/csv", key="dl_tot_csv")
+                st.markdown(genera_link_download(csv_totale, "emissioni_totali_giornaliere.csv", "Esporta dati totali (CSV)"), unsafe_allow_html=True)
             with col_exp2:
                 output_xlsx = io.BytesIO()
                 with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer:
                     df_totale.to_excel(writer, index=False, sheet_name='Totale Giornaliero')
-                st.download_button("Scarica dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali_giornaliere.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_tot_xlsx")
+                st.markdown(genera_link_download(output_xlsx.getvalue(), "emissioni_totali_giornaliere.xlsx", "Esporta dati totali (XLSX)"), unsafe_allow_html=True)
 
             st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
             st.subheader("Disaggregazione per Categoria")
@@ -328,7 +346,7 @@ if file_cantiere:
                 with col_grafici[idx % 2]:
                     st.plotly_chart(fig_cat, use_container_width=True)
                     csv_cat = df_p.to_csv(index=False).encode('utf-8')
-                    st.download_button(f"Scarica dati {param} (CSV)", data=csv_cat, file_name=f"dati_{param.lower()}.csv", mime="text/csv", key=f"dl_{param}")
+                    st.markdown(genera_link_download(csv_cat, f"dati_{param.lower()}.csv", f"Esporta dati {param} (CSV)"), unsafe_allow_html=True)
 
             # Tabella Dati Globale
             st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
@@ -338,7 +356,7 @@ if file_cantiere:
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                     df_filtrato.drop(columns=['Data_dt']).to_excel(writer, index=False, sheet_name='Dettaglio Completo')
-                st.download_button("Scarica intero dataset filtrato (XLSX)", data=excel_buffer.getvalue(), file_name="dataset_completo_lca.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_full_xlsx")
+                st.markdown(genera_link_download(excel_buffer.getvalue(), "dataset_completo_lca.xlsx", "Esporta intero dataset filtrato (XLSX)"), unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
