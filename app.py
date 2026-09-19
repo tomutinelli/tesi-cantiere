@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime, date
 import os
 import io
+from difflib import get_close_matches
 from google import genai
 from google.genai import types
 
@@ -167,14 +168,14 @@ if df_inventario is None or df_inventario.empty:
     st.error(f"Errore critico: Il database '{percorso_lci}' non è reperibile o non è valido sul server.")
     st.stop()
 
-# --- BLOCCO INPUT DATI (IA vs MANUALE) ---
+# --- BLOCCO INPUT DATI (IA + TRADUTTORE PYTHON) ---
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Caricamento Dataset di Progetto")
 
 tab1, tab2 = st.tabs(["✨ Elaborazione Intelligente (IA)", "📂 Caricamento CSV Manuale"])
 
 with tab1:
-    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel). L'IA estrarrà i dati e li mapperà sulle voci esatte del file LCI.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel). L'IA estrarrà i dati grezzi e il motore Python li mapperà automaticamente sulle voci esatte del file LCI.</p>", unsafe_allow_html=True)
     
     file_computo = st.file_uploader("Computo Metrico (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_comp")
     file_cronoprogramma = st.file_uploader("Cronoprogramma / Gantt (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_crono")
@@ -189,7 +190,7 @@ with tab1:
         else:
             try:
                 client = genai.Client(api_key=api_key)
-                with st.spinner("L'intelligenza artificiale sta analizzando gli elaborati..."):
+                with st.spinner("L'intelligenza artificiale sta leggendo gli elaborati..."):
                     contents = []
                     
                     for file_obj in [file_computo, file_cronoprogramma, file_trasporti]:
@@ -208,30 +209,17 @@ with tab1:
                                 types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
                             )
                     
-                    vocabolario_ia = ""
-                    for param in df_inventario['Parametro'].unique():
-                        voci_valide = df_inventario[df_inventario['Parametro'] == param]['Elemento_LCI'].astype(str).unique().tolist()
-                        voci_str = ", ".join([f"'{v.strip()}'" for v in voci_valide])
-                        vocabolario_ia += f"  - Se 'Parametro' è {param}, scegli tra: [{voci_str}]\n"
-                    
-                    prompt_sistema = f"""
-                    Sei un esperto ingegnere edile e analista LCA. 
-                    Il tuo compito è analizzare i documenti di progetto forniti e generarne un'unica tabella CSV pulita.
-                    
-                    Il CSV finale DEVE avere esattamente queste 4 intestazioni di colonna:
+                    # Prompt semplificato ed efficiente per l'estrazione pura
+                    prompt_sistema = """
+                    Sei un ingegnere edile. Estrai i dati dai documenti forniti (computo, cronoprogramma, trasporti) e restituisci una tabella CSV pulita con queste esatte 4 colonne:
                     Data,Parametro,Elemento,Quantita
                     
-                    Regole ferree:
-                    1. 'Data': Formato AAAA-MM-GG. Se c'è un cronoprogramma, distribuisci le quantità nelle date corrette.
-                    2. 'Parametro': Scegli ESCLUSIVAMENTE tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
-                    3. 'Elemento': DEVI AGIRE COME UN CLASSIFICATORE. Leggi la voce del computo e traducila usando SOLO una voce dal seguente elenco in base al parametro:
+                    - Data: Formato AAAA-MM-GG.
+                    - Parametro: Scegli tassativamente tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
+                    - Elemento: Riporta la descrizione originale dell'elemento o del materiale trovata nel computo (es. "Calcestruzzo strutturale Rck 30", "Acciaio B450C", "Diesel").
+                    - Quantita: Valore numerico (per i trasporti, calcola la massa in tonnellate moltiplicata per i chilometri).
                     
-{vocabolario_ia}
-                    
-                    È vietato usare i nomi originali del computo. Usa esclusivamente i termini esatti contenuti tra virgolette nelle liste sopra.
-                    4. 'Quantita': Valore numerico (per i trasporti: massa in tonnellate x km).
-                    
-                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, pronto per pd.read_csv().
+                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, senza blocchi Markdown, pronto per pd.read_csv().
                     """
                     contents.append(prompt_sistema)
                     
@@ -248,11 +236,60 @@ with tab1:
                         elif csv_testo.startswith("\n"):
                             csv_testo = csv_testo.strip()
                     
-                    df_cantiere = pd.read_csv(io.StringIO(csv_testo))
-                    st.session_state['df_cantiere'] = df_cantiere
-                    st.success("Documenti elaborati, normalizzati e classificati con successo dall'IA!")
+                    df_cantiere_grezzo = pd.read_csv(io.StringIO(csv_testo))
+                    
+                    # --- MOTORE PYTHON DI CORRETTORE / TRADUZIONE SEMANTICA ---
+                    # Questo script prende le descrizioni grezze dell'IA e le forza sui nomi esatti del database LCI
+                    def mappa_voce_a_lci(parametro, elemento_grezzo):
+                        p_str = str(parametro).strip()
+                        e_str = str(elemento_grezzo).strip().lower()
+                        
+                        # Filtra le voci valide nel database per quel parametro
+                        voci_disponibili = df_inventario[df_inventario['Parametro'].str.lower() == p_str.lower()]['Elemento_LCI'].tolist()
+                        if not voci_disponibili:
+                            # Se il parametro non coincide perfettamente, prendiamo tutte le voci
+                            voci_disponibili = df_inventario['Elemento_LCI'].tolist()
+                            
+                        # Controllo corrispondenze dirette o parole chiave
+                        for v in voci_disponibili:
+                            if v.lower() in e_str or e_str in v.lower():
+                                return v
+                                
+                        # Traduzioni mirate per i casi edili più comuni
+                        if p_str.lower() == 'materiali':
+                            if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
+                            if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
+                            if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
+                            if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str: return 'Inerti'
+                            if 'asfalto' in e_str or 'bitume' in e_str: return 'Asfalto/Bitume'
+                            if 'legno' in e_str: return 'Legno'
+                            if 'vetro' in e_str: return 'Vetro'
+                            if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
+                        elif p_str.lower() == 'rifiuti':
+                            if 'scavo' in e_str or 'terra' in e_str: return 'Inerti / Macerie di demolizione'
+                            if 'calcestruzzo' in e_str: return 'Calcestruzzo di risulta'
+                            if 'acciaio' in e_str or 'ferro' in e_str: return 'Metallo / Acciaio di scarto'
+                            if 'legno' in e_str: return 'Legno da cantiere'
+                        elif p_str.lower() in ['trasporti', 'macchinari']:
+                            if 'diesel' in e_str or 'gasolio' in e_str: return 'Diesel'
+                            if 'benzina' in e_str or 'petrol' in e_str: return 'Petrol'
+                            
+                        # Tentativo di fuzzy matching automatico con Python
+                        match = get_close_matches(elemento_grezzo, voci_disponibili, n=1, cutoff=0.1)
+                        if match:
+                            return match[0]
+                            
+                        return elemento_grezzo # Fallback se proprio non trova nulla
+
+                    # Applica la traduzione riga per riga
+                    df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(
+                        lambda row: mappa_voce_a_lci(row['Parametro'], row['Elemento']), axis=1
+                    )
+                    
+                    st.session_state['df_cantiere'] = df_cantiere_grezzo
+                    st.success("Documenti elaborati e normalizzati con successo dal motore Python!")
             except Exception as e:
-                st.error(f"Errore durante l'elaborazione con l'IA: {e}")
+                st.error(f"Errore durante l'elaborazione: {e}")
 
 with tab2:
     st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Importa il file CSV contenente la serie temporale dei consumi (Data, Parametro, Elemento, Quantita).</p>", unsafe_allow_html=True)
@@ -273,7 +310,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere']
     
-    with st.expander("👀 Visualizza Anteprima Dati Input Classificati"):
+    with st.expander("👀 Visualizza Anteprima Dati Input Classificati da Python"):
         st.dataframe(df_cantiere, use_container_width=True)
         csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
         st.download_button(
