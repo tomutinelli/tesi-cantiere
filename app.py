@@ -325,7 +325,40 @@ st.markdown("</div>", unsafe_allow_html=True)
 # =====================================================================
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere']
+    # --- BLINDATURA NOMI COLONNE ---
+    # Rinomina automaticamente qualsiasi variazione di maiuscole/minuscole o lingua
+    mappa_colonne_finali = {}
+    for col in df_cantiere.columns:
+        c_low = str(col).strip().lower()
+        if 'data' in c_low or 'date' in c_low:
+            mappa_colonne_finali[col] = 'Data'
+        elif 'param' in c_low or 'categ' in c_low:
+            mappa_colonne_finali[col] = 'Parametro'
+        elif 'elem' in c_low or 'material' in c_low:
+            mappa_colonne_finali[col] = 'Elemento'
+        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low:
+            mappa_colonne_finali[col] = 'Quantita'
+            
+    df_cantiere.rename(columns=mappa_colonne_finali, inplace=True)
     
+    with st.expander("👀 Visualizza Anteprima Dati Input Classificati"):
+        st.dataframe(df_cantiere, use_container_width=True)
+        csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Scarica Dati Input Normalizzati (CSV)",
+            data=csv_input,
+            file_name="dati_input_cantiere.csv",
+            mime="text/csv",
+            key="dl_input_csv"
+        )
+    
+    try:
+        # Verifica finale che le 4 colonne esistano davvero prima dei calcoli
+        colonne_obbligatorie = ['Data', 'Parametro', 'Elemento', 'Quantita']
+        for col in colonne_obbligatorie:
+            if col not in df_cantiere.columns:
+                st.error(f"Manca la colonna obbligatorie '{col}' nel dataset. Colonne attuali: {df_cantiere.columns.tolist()}")
+                st.stop()
     with st.expander("👀 Visualizza Anteprima Dati Input Classificati"):
         st.dataframe(df_cantiere, use_container_width=True)
         csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
