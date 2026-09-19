@@ -252,4 +252,223 @@ with tab1:
                     
                     csv_testo = response.text.strip()
                     if csv_testo.startswith("```"):
-                        csv_testo = csv_testo.split("
+                        csv_testo = csv_testo.split("```")[1]
+                        if csv_testo.startswith("csv"):
+                            csv_testo = csv_testo[3:].strip()
+                    
+                    df_cantiere = pd.read_csv(io.StringIO(csv_testo))
+                    st.session_state['df_cantiere'] = df_cantiere
+                    st.success("Documenti elaborati e normalizzati con successo dall'IA!")
+            except Exception as e:
+                st.error(f"Errore durante l'elaborazione con l'IA: {e}")
+
+with tab2:
+    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Importa il file in formato CSV contenente la serie temporale dei consumi già formattata (Data, Parametro, Elemento, Quantita).</p>", unsafe_allow_html=True)
+    file_csv_manuale = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed", key="csv_manuale")
+    if file_csv_manuale:
+        try:
+            df_cantiere = pd.read_csv(file_csv_manuale)
+            st.session_state['df_cantiere'] = df_cantiere
+            st.success("File CSV caricato correttamente!")
+        except Exception as e:
+            st.error(f"Errore nella lettura del file: {e}")
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+# =====================================================================
+# ELABORAZIONE E GRAFICI (Si attiva solo se i dati sono caricati)
+# =====================================================================
+if 'df_cantiere' in st.session_state:
+    df_cantiere = st.session_state['df_cantiere']
+    
+    # --- VISUALIZZAZIONE ANTEPRIMA DATI ---
+    with st.expander("👀 Visualizza Anteprima Dati Input (Utile per verifica IA)"):
+        st.dataframe(df_cantiere, use_container_width=True)
+        csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Scarica Dati Input (CSV)",
+            data=csv_input,
+            file_name="dati_input_cantiere.csv",
+            mime="text/csv",
+            key="dl_input_csv"
+        )
+    
+    try:
+        # Validazione Colonne
+        for col in ['Data', 'Parametro', 'Elemento', 'Quantita']:
+            if col not in df_cantiere.columns:
+                st.error(f"Errore di struttura: La colonna '{col}' risulta assente.")
+                st.stop()
+        
+        df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
+        df_completo = pd.merge(df_cantiere, df_inventario, on=['Parametro', 'Elemento'], how='left')
+        
+        mancanti = df_completo[df_completo['Fattore_Emissione'].isnull()]
+        if not mancanti.empty:
+            st.warning(f"Attenzione: Elementi non riconosciuti nel database LCI e calcolati a zero: {mancanti['Elemento'].unique().tolist()}")
+            df_completo['Fattore_Emissione'] = df_completo['Fattore_Emissione'].fillna(0)
+            
+        df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
+        df_completo['CO2_Normalizzata'] = df_completo['CO2_Totale_kg'] / dimensione_cantiere
+        
+        # --- FILTRO TEMPORALE ---
+        st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
+        st.subheader("Filtro Temporale")
+        st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 15px;'>Seleziona l'arco temporale di interesse per l'analisi.</p>", unsafe_allow_html=True)
+        
+        min_date = df_completo['Data_dt'].min().date()
+        max_date = df_completo['Data_dt'].max().date()
+
+        date_range = st.date_input(
+            "Intervallo temporale",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+            label_visibility="collapsed"
+        )
+
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            start_date, end_date = date_range
+            mask = (df_completo['Data_dt'].dt.date >= start_date) & (df_completo['Data_dt'].dt.date <= end_date)
+            df_filtrato = df_completo.loc[mask].copy()
+        elif isinstance(date_range, date):
+            mask = (df_completo['Data_dt'].dt.date == date_range)
+            df_filtrato = df_completo.loc[mask].copy()
+        else:
+            df_filtrato = df_completo.copy()
+            
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # --- VISUALIZZAZIONE GRAFICI ---
+        st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
+        
+        # LINK WIX FULLSCREEN
+        col_title, col_link = st.columns([2, 1])
+        with col_title:
+            st.subheader("Risultati Analitici")
+        with col_link:
+            link_app = "https://INSERISCI-QUI-IL-TUO-LINK.streamlit.app" 
+            st.link_button("Apri a schermo intero per esportare", link_app)
+            
+        st.markdown(f"<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 25px;'>I valori visualizzati esprimono l'incidenza normalizzata rispetto all'unità funzionale complessiva (<b>{dimensione_cantiere} {unita}</b>).</p>", unsafe_allow_html=True)
+        
+        if df_filtrato.empty:
+            st.warning("Nessuna evidenza registrata nell'intervallo temporale selezionato.")
+        else:
+            modo_visualizzazione = st.selectbox(
+                "Modalità di visualizzazione grafica",
+                options=[
+                    "Standard (Barre temporali)", 
+                    "Linea Media (Andamento con media mobile)",
+                    "Linea Media Fissa (Orizzontale)"
+                ],
+                index=0
+            )
+
+            def genera_figura(df_dat, x_col, y_col, titolo, colore_base):
+                df_dat = df_dat.copy()
+                if df_dat.empty:
+                    return go.Figure()
+                    
+                if "Media mobile" in modo_visualizzazione or "Media (Andamento" in modo_visualizzazione:
+                    df_dat = df_dat.sort_values(by=x_col)
+                    df_dat['Media_Mobile'] = df_dat[y_col].rolling(window=7, min_periods=1).mean()
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Valore Giornaliero', marker_color=colore_base, opacity=0.4))
+                    fig.add_trace(go.Scatter(x=df_dat[x_col], y=df_dat['Media_Mobile'], mode='lines', name='Linea Media (7gg)', line=dict(color='#111827', width=3)))
+                    fig.update_layout(title=f"{titolo} - Andamento con Media Mobile")
+                elif "Fissa" in modo_visualizzazione:
+                    media_val = df_dat[y_col].mean()
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Valore Giornaliero', marker_color=colore_base, opacity=0.5))
+                    fig.add_hline(
+                        y=media_val, line_dash="dash", line_color="#27ae60", 
+                        annotation_text=f"Media Fissa: {media_val:.2f}", annotation_position="top right"
+                    )
+                    fig.update_layout(title=f"{titolo} - Con Linea Media Fissa nell'Intervallo")
+                else:
+                    fig = px.bar(
+                        df_dat, x=x_col, y=y_col,
+                        title=titolo, labels={y_col: f'kg CO₂e / {unita}', x_col: ''}, text_auto='.2f'
+                    )
+                    fig.update_traces(marker_color=colore_base)
+                
+                fig.update_layout(
+                    height=380, font_family="Inter", 
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    title_font_size=14, title_font_color="#374151"
+                )
+                return fig
+
+            # 1. Grafico Totale
+            df_totale = df_filtrato.groupby('Data')['CO2_Normalizzata'].sum().reset_index()
+            fig_tot = genera_figura(df_totale, 'Data', 'CO2_Normalizzata', f"Andamento Complessivo (kg CO₂e / {unita})", "#0B0752")
+            st.plotly_chart(fig_tot, use_container_width=True)
+            
+            # 2. Diagramma a Torta (Incidenza Percentuale)
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            df_pie = df_filtrato.groupby('Parametro')['CO2_Normalizzata'].sum().reset_index()
+            
+            fig_pie = px.pie(
+                df_pie, 
+                values='CO2_Normalizzata', 
+                names='Parametro',
+                title="Incidenza Percentuale delle Categorie sulle Emissioni Totali",
+                color='Parametro',
+                color_discrete_map=colori_parametri,
+                hole=0.4 # Grafico ad anello (Donut chart) per un look più moderno
+            )
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#ffffff', width=2)))
+            fig_pie.update_layout(
+                height=450, 
+                font_family="Inter", 
+                showlegend=True, 
+                title_font_size=14, 
+                title_font_color="#374151",
+                plot_bgcolor='rgba(0,0,0,0)', 
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+            # Pulsanti Download Dati Totali
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                csv_totale = df_totale.to_csv(index=False).encode('utf-8')
+                st.download_button("Scarica dati totali (CSV)", data=csv_totale, file_name="emissioni_totali.csv", mime="text/csv", key="dl_tot_csv")
+            with col_exp2:
+                output_xlsx = io.BytesIO()
+                with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer:
+                    df_totale.to_excel(writer, index=False, sheet_name='Totale Giornaliero')
+                st.download_button("Scarica dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_tot_xlsx")
+
+            st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True)
+            st.subheader("Disaggregazione per Categoria")
+            
+            parametri_presenti = df_filtrato['Parametro'].dropna().unique()
+            col_grafici = st.columns(2)
+            
+            for idx, param in enumerate(parametri_presenti):
+                df_p = df_filtrato[df_filtrato['Parametro'] == param].groupby('Data')['CO2_Normalizzata'].sum().reset_index()
+                colore_cat = colori_parametri.get(param, '#4b5563') # Colore di default se non mappato
+                
+                fig_cat = genera_figura(df_p, 'Data', 'CO2_Normalizzata', f"{param}", colore_cat)
+                
+                with col_grafici[idx % 2]:
+                    st.plotly_chart(fig_cat, use_container_width=True)
+                    csv_cat = df_p.to_csv(index=False).encode('utf-8')
+                    st.download_button(f"Scarica dati {param} (CSV)", data=csv_cat, file_name=f"dati_{param.lower()}.csv", mime="text/csv", key=f"dl_{param}")
+
+            # Tabella Dati Globale
+            st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+            with st.expander("Esporta / Visualizza matrice dati completa calcolata"):
+                st.dataframe(df_filtrato.drop(columns=['Data_dt']), use_container_width=True)
+                
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    df_filtrato.drop(columns=['Data_dt']).to_excel(writer, index=False, sheet_name='Dettaglio Completo')
+                st.download_button("Scarica dataset completo calcolato (XLSX)", data=excel_buffer.getvalue(), file_name="dataset_completo_lca.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_full_xlsx")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    except Exception as e:
+        st.error(f"Si è verificato un errore durante l'elaborazione dei dati LCA: {e}")
