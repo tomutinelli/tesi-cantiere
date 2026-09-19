@@ -190,7 +190,7 @@ with tab1:
             <li><b>Carica i file nella barra unica:</b> Trascina contemporaneamente tutti i documenti nel riquadro sottostante. L'IA provvederà anche a convertire automaticamente le unità di misura (es. $m^3$ di cls in kg tramite densità) per adeguarle agli standard LCI.</li>
             <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i> per estrarre e unificare i dati.</li>
             <li><b>Visualizza i risultati:</b> Controlla l'anteprima della tabella normalizzata, scarica il CSV pulito e analizza i grafici aggiornati.</li>
-            In alternativa, Se si possiede già il file CSV impostato correttamente, lo si inserisca direttamente nella scheda apposita "Caricamento CSV Manuale".
+            <li><i>Se si possiede già il file CSV impostato correttamente, lo si inserisca direttamente nella scheda apposita "Caricamento CSV Manuale".</i></li>
         </ol>
     </div>
     """, unsafe_allow_html=True)
@@ -243,7 +243,7 @@ with tab1:
                     contents.append(prompt_sistema)
                     
                     response = client.models.generate_content(
-                        model='gemini-3.6-flash',
+                        model='gemini-2.5-flash',
                         contents=contents
                     )
                     
@@ -321,12 +321,13 @@ with tab1:
                     )
                     
                     st.session_state['df_cantiere'] = df_cantiere_grezzo
+                    st.session_state['origine'] = 'ia'
                     st.success("Tutti i documenti sono stati analizzati e convertiti con successo!")
             except Exception as e:
-                st.error(f"Errore durante l'elaborazione con l'IA: {e}")
+                st.error(f"Errore durante l'elaborazione (possibile limite di carico o quota API): {e}")
 
-    # Anteprima e Download CSV IA
-    if 'df_cantiere' in st.session_state:
+    # Anteprima e Download CSV IA (se originato da IA)
+    if 'df_cantiere' in st.session_state and st.session_state.get('origine') == 'ia':
         st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
         st.markdown("#### 👁️ Anteprima Dati Elaborati dall'IA")
         st.dataframe(st.session_state['df_cantiere'], use_container_width=True)
@@ -352,9 +353,15 @@ with tab2:
     if file_cantiere:
         try:
             st.session_state['df_cantiere'] = pd.read_csv(file_cantiere)
+            st.session_state['origine'] = 'manuale'
             st.success("File CSV caricato correttamente!")
         except Exception as e:
             st.error(f"Errore nella lettura del file: {e}")
+    elif not file_cantiere and st.session_state.get('origine') == 'manuale':
+        if 'df_cantiere' in st.session_state:
+            del st.session_state['df_cantiere']
+        if 'origine' in st.session_state:
+            del st.session_state['origine']
 
 st.markdown("</div>", unsafe_allow_html=True)
 
