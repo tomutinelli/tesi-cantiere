@@ -184,50 +184,62 @@ tab1, tab2 = st.tabs(["Elaborazione Intelligente (IA)", "Caricamento CSV Manuale
 with tab1:
     st.markdown("""
     <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
-        <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Procedura per l'Elaborazione con IA</h4>
-        <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
-            <li><b>Prepara la documentazione di cantiere:</b> Raccogli i file di progetto (es. computo metrico in PDF/Excel, cronoprogramma o Gantt, e note sui trasporti).</li>
-            <li><b>Carica i file nei campi sottostanti:</b> Trascina i documenti nei rispettivi riquadri dedicati. Il computo metrico è obbligatorio.</li>
-            <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i>. L'intelligenza artificiale estrarrà le date, i parametri e le quantità grezze.</li>
-            <li><b>Visualizza i risultati:</b> Controlla l'anteprima della tabella normalizzata, scarica il CSV pulito e analizza i grafici aggiornati.</li>
-        </ol>
+        <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Unificazione e Conversione Unità di Misura</h4>
+        <p style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 10px;'>
+        Carica contemporaneamente tutti i file di cantiere (Computo Metrico, Cronoprogramma e Trasporti) nell'unica barra sottostante. L'intelligenza artificiale analizzerà congiuntamente i documenti.
+        </p>
+        <ul style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
+            <li><b>Unità di Misura LCI:</b> Poiché il database LCI richiede le quantità in kg (o unità coerenti), l'IA converte automaticamente le unità diverse (es. convertendo metri cubi di calcestruzzo $m^3$ in chilogrammi $kg$ sfruttando la densità tipica, es. $2400\\ kg/m^3$).</li>
+            <li><b>Anteprima e Download:</b> Dopo l'elaborazione potrai visionare la tabella estratta in anteprima e scaricare il file CSV normalizzato.</li>
+        </ul>
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel o CSV). L'IA estrarrà i dati e il motore Python li mapperà automaticamente sul database LCI.</p>", unsafe_allow_html=True)
-    
-    file_computo = st.file_uploader("Computo Metrico (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_comp")
-    file_cronoprogramma = st.file_uploader("Cronoprogramma / Gantt (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_crono")
-    file_trasporti = st.file_uploader("Note distanze trasporti (TXT o PDF)", type=['txt', 'pdf', 'xlsx', 'csv'], key="ia_trasp")
+    files_unificati = st.file_uploader(
+        "Carica tutti i documenti di cantiere insieme (Computo, Cronoprogramma, Trasporti)", 
+        type=['pdf', 'txt', 'xlsx', 'csv'], 
+        accept_multiple_files=True,
+        key="ia_unified"
+    )
 
     if st.button("Elabora e Normalizza con IA", key="btn_ia"):
         api_key = st.secrets.get("GEMINI_API_KEY")
         if not api_key:
             st.error("Chiave API mancante nei Secrets. Inserisci GEMINI_API_KEY per utilizzare questa funzione.")
-        elif not file_computo:
-            st.warning("Carica almeno il file del computo metrico per procedere.")
+        elif not files_unificati:
+            st.warning("Carica almeno un file per procedere.")
         else:
             try:
                 client = genai.Client(api_key=api_key)
-                with st.spinner("L'intelligenza artificiale sta analizzando i documenti..."):
+                with st.spinner("L'intelligenza artificiale sta analizzando e convertendo le unità di misura..."):
                     contents = []
-                    for file_obj in [file_computo, file_cronoprogramma, file_trasporti]:
-                        if file_obj is not None:
-                            estensione = file_obj.name.split('.')[-1].lower()
-                            if estensione == 'pdf':
-                                mime = 'application/pdf'
-                            elif estensione == 'xlsx':
-                                mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                            elif estensione == 'csv':
-                                mime = 'text/csv'
-                            else:
-                                mime = 'text/plain'
-                            
-                            contents.append(
-                                types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
-                            )
+                    for file_obj in files_unificati:
+                        estensione = file_obj.name.split('.')[-1].lower()
+                        if estensione == 'pdf':
+                            mime = 'application/pdf'
+                        elif estensione == 'xlsx':
+                            mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                        elif estensione == 'csv':
+                            mime = 'text/csv'
+                        else:
+                            mime = 'text/plain'
+                        
+                        contents.append(
+                            types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
+                        )
                     
-                    prompt_sistema = "Sei un ingegnere edile e analista LCA. Estrai i dati dai documenti forniti (computi, cronoprogrammi, note trasporti) e restituisci una tabella CSV pulita con queste esatte 4 intestazioni di colonna: Data,Parametro,Elemento,Quantita. - Data: Formato AAAA-MM-GG. - Parametro: Scegli tassativamente tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari. - Elemento: Riporta la descrizione dell'elemento o materiale trovata nel computo. - Quantita: Valore numerico (per i trasporti, calcola la massa in tonnellate moltiplicata per i chilometri). Restituisci ESCLUSIVAMENTE il codice CSV grezzo, senza blocchi Markdown, pronto per pd.read_csv()."
+                    prompt_sistema = """
+                    Sei un ingegnere edile e analista LCA. Analizza congiuntamente TUTTI i documenti forniti (computo metrico, cronoprogramma, trasporti).
+                    Restituisci un'unica tabella CSV pulita con queste esatte 4 intestazioni di colonna:
+                    Data,Parametro,Elemento,Quantita
+                    
+                    - Data: Formato AAAA-MM-GG. Distribuisci le quantità lungo le date del cantiere.
+                    - Parametro: Scegli tassativamente tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
+                    - Elemento: Descrizione standardizzata dell'elemento o materiale.
+                    - Quantita: Valore numerico convertito nell'unità di misura coerente con il database LCI (es. converti i metri cubi di calcestruzzo in kg moltiplicando per la densità di 2400 kg/m3; converti tonnellate di acciaio in kg moltiplicando per 1000). Per i trasporti, massa in tonnellate moltiplicata per i km (t*km).
+                    
+                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, senza blocchi Markdown, pronto per pd.read_csv().
+                    """
                     contents.append(prompt_sistema)
                     
                     response = client.models.generate_content(
@@ -245,7 +257,6 @@ with tab1:
                     
                     df_cantiere_grezzo = pd.read_csv(io.StringIO(csv_testo))
                     
-                    # Correttore automatico intestazioni
                     colonne_mappa = {}
                     for c in df_cantiere_grezzo.columns:
                         c_low = str(c).strip().lower()
@@ -269,7 +280,6 @@ with tab1:
                     if 'Quantita' not in df_cantiere_grezzo.columns:
                         df_cantiere_grezzo['Quantita'] = 1.0
 
-                    # Motore di traduzione semantica Python verso il database LCI
                     def mappa_voce_a_lci(parametro, elemento_grezzo):
                         p_str = str(parametro).strip()
                         e_str = str(elemento_grezzo).strip().lower()
@@ -311,15 +321,30 @@ with tab1:
                     )
                     
                     st.session_state['df_cantiere'] = df_cantiere_grezzo
-                    st.success("Documenti elaborati e normalizzati con successo dall'IA!")
+                    st.success("Tutti i documenti sono stati analizzati e convertiti con successo!")
             except Exception as e:
                 st.error(f"Errore durante l'elaborazione con l'IA: {e}")
+
+    # Anteprima e Download CSV IA
+    if 'df_cantiere' in st.session_state:
+        st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+        st.markdown("#### 👁️ Anteprima Dati Elaborati dall'IA")
+        st.dataframe(st.session_state['df_cantiere'], use_container_width=True)
+        
+        csv_esportato = st.session_state['df_cantiere'].to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "📥 Scarica CSV Normalizzato dall'IA", 
+            data=csv_esportato, 
+            file_name="dataset_cantiere_normalizzato.csv", 
+            mime="text/csv",
+            key="download_csv_ia"
+        )
 
 with tab2:
     st.markdown("""
     <p style='color: #4b5563; font-size: 0.95rem; line-height: 1.6; margin-bottom: 15px;'>
-    Questo strumento calcola l'impronta di carbonio (kg di CO₂e) in fase di progetto incrociando i dati di consumo giornaliero con il database LCI di riferimento. 
-    Il dataset di progetto deve essere strutturato in 4 colonne: <code>Data</code> (AAAA-MM-GG), <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code>.
+    Questo strumento calcola l'impronta di carbonio (kg di CO₂e) in fase di progetto incrociando i dati con il database LCI di riferimento. 
+    Il dataset deve essere strutturato in 4 colonne: <code>Data</code> (AAAA-MM-GG), <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code> (con unità già convertite secondo gli standard LCI).
     </p>
     """, unsafe_allow_html=True)
     
@@ -339,7 +364,6 @@ st.markdown("</div>", unsafe_allow_html=True)
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere']
     
-    # Blindatura nomi colonne
     mappa_colonne_finali = {}
     for col in df_cantiere.columns:
         c_low = str(col).strip().lower()
@@ -362,7 +386,6 @@ if 'df_cantiere' in st.session_state:
         
         df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
         
-        # Normalizzazione robusta per il merge
         df_cantiere['Parametro_match'] = df_cantiere['Parametro'].astype(str).str.strip().str.lower()
         df_cantiere['Elemento_match'] = df_cantiere['Elemento'].astype(str).str.strip().str.lower()
         
