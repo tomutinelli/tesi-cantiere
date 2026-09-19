@@ -6,6 +6,9 @@ from datetime import datetime, date
 import os
 import io
 import base64
+from difflib import get_close_matches
+from google import genai
+from google.genai import types
 
 # Impostazioni della pagina
 st.set_page_config(page_title="EcoSite Tracker | LCA Dashboard", layout="wide")
@@ -54,6 +57,7 @@ st.markdown("""
         color: #4b5563;
     }
 
+    /* Pulsanti di download stilizzati (Design moderno) */
     .custom-dl-btn {
         text-decoration: none !important;
         background-color: #ffffff !important;
@@ -93,7 +97,7 @@ with st.expander("Note metodologiche e specifiche di utilizzo"):
     st.markdown("""
     <p style='color: #4b5563; font-size: 0.95rem; line-height: 1.6; margin-bottom: 0;'>
     Questo strumento calcola l'impronta di carbonio (kg di CO₂e) in fase di progetto incrociando i dati di consumo giornaliero con il database LCI di riferimento. 
-    Il file CSV di progetto deve essere strutturato in 4 colonne: <code>Data</code> (AAAA-MM-GG), <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code>.
+    Il dataset di progetto deve essere strutturato in 4 colonne: <code>Data</code> (AAAA-MM-GG), <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code>.
     </p>
     """, unsafe_allow_html=True)
 
@@ -180,26 +184,186 @@ if df_inventario is None or df_inventario.empty:
     st.error(f"Errore critico: Il database '{percorso_lci}' non è reperibile o non è valido sul server.")
     st.stop()
 
-# --- CARICAMENTO CSV UTENTE ---
+# --- BLOCCO INPUT DATI (IA vs CSV MANUALE) ---
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Caricamento Dataset di Progetto")
-st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Importa il file in formato CSV contenente la serie temporale dei consumi.</p>", unsafe_allow_html=True)
-file_cantiere = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed")
+
+tab1, tab2 = st.tabs(["✨ Elaborazione Intelligente (IA)", "📂 Caricamento CSV Manuale"])
+
+with tab1:
+    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel o CSV). L'IA estrarrà i dati e il motore Python li mapperà automaticamente sul database LCI.</p>", unsafe_allow_html=True)
+    
+    file_computo = st.file_uploader("Computo Metrico (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_comp")
+    file_cronoprogramma = st.file_uploader("Cronoprogramma / Gantt (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_crono")
+    file_trasporti = st.file_uploader("Note distanze trasporti (TXT o PDF)", type=['txt', 'pdf', 'xlsx', 'csv'], key="ia_trasp")
+
+    if st.button("Elabora e Normalizza con IA", key="btn_ia"):
+        api_key = st.secrets.get("GEMINI_API_KEY")
+        if not api_key:
+            st.error("Chiave API mancante nei Secrets. Inserisci GEMINI_API_KEY per utilizzare questa funzione.")
+        elif not file_computo:
+            st.warning("Carica almeno il file del computo metrico per procedere.")
+        else:
+            try:
+                client = genai.Client(api_key=api_key)
+                with st.spinner("L'intelligenza artificiale sta analizzando i documenti..."):
+                    contents = []
+                    for file_obj in [file_computo, file_cronoprogramma, file_trasporti]:
+                        if file_obj is not None:
+                            estensione = file_obj.name.split('.')[-1].lower()
+                            if estensione == 'pdf':
+                                mime = 'application/pdf'
+                            elif estensione == 'xlsx':
+                                mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                            elif estensione == 'csv':
+                                mime = 'text/csv'
+                            else:
+                                mime = 'text/plain'
+                            
+                            contents.append(
+                                types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
+                            )
+                    
+                    prompt_sistema = """
+                    Sei un ingegnere edile e analista LCA. Estrai i dati dai documenti forniti (computi, cronoprogrammi, note trasporti) e restituisci una tabella CSV pulita con queste esatte 4 intestazioni di colonna:
+                    Data,Parametro,Elemento,Quantita
+                    
+                    - Data: Formato AAAA-MM-GG.
+                    - Parametro: Scegli tassativamente tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
+                    - Elemento: Riporta la descrizione dell'elemento o materiale trovata nel computo.
+                    - Quantita: Valore numerico (per i trasporti, calcola la massa in tonnellate moltiplicata per i chilometri).
+                    
+                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, senza blocchi Markdown, pronto per pd.read_csv().
+                    """
+                    contents.append(prompt_sistema)
+                    
+                    response = client.models.generate_content(
+                        model='gemini-3.6-flash',
+                        contents=contents
+                    )
+                    
+                    csv_testo = response.text.strip()
+                    if csv_testo.startswith("```"):
+                        csv_testo = csv_testo.split("```")[1]
+                        if csv_testo.startswith("csv"):
+                            csv_testo = csv_testo[3:].strip()
+                        elif csv_testo.startswith("\n"):
+                            csv_testo = csv_testo.strip()
+                    
+                    df_cantiere_grezzo = pd.read_csv(io.StringIO(csv_testo))
+                    
+                    # Correttore automatico intestazioni
+                    colonne_mappa = {}
+                    for c in df_cantiere_grezzo.columns:
+                        c_low = str(c).strip().lower()
+                        if 'data' in c_low or 'date' in c_low or 'giorno' in c_low:
+                            colonne_mappa[c] = 'Data'
+                        elif 'param' in c_low or 'categ' in c_low:
+                            colonne_mappa[c] = 'Parametro'
+                        elif 'elem' in c_low or 'material' in c_low or 'voce' in c_low:
+                            colonne_mappa[c] = 'Elemento'
+                        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'amount' in c_low:
+                            colonne_mappa[c] = 'Quantita'
+                    
+                    df_cantiere_grezzo.rename(columns=colonne_mappa, inplace=True)
+                    
+                    if 'Parametro' not in df_cantiere_grezzo.columns:
+                        df_cantiere_grezzo['Parametro'] = 'Materiali'
+                    if 'Data' not in df_cantiere_grezzo.columns:
+                        df_cantiere_grezzo['Data'] = str(date.today())
+                    if 'Elemento' not in df_cantiere_grezzo.columns:
+                        df_cantiere_grezzo['Elemento'] = 'Calcestruzzo'
+                    if 'Quantita' not in df_cantiere_grezzo.columns:
+                        df_cantiere_grezzo['Quantita'] = 1.0
+
+                    # Motore di traduzione semantica Python verso il database LCI
+                    def mappa_voce_a_lci(parametro, elemento_grezzo):
+                        p_str = str(parametro).strip()
+                        e_str = str(elemento_grezzo).strip().lower()
+                        
+                        voci_disponibili = df_inventario[df_inventario['Parametro'].str.lower() == p_str.lower()]['Elemento'].tolist()
+                        if not voci_disponibili:
+                            voci_disponibili = df_inventario['Elemento'].tolist()
+                            
+                        for v in voci_disponibili:
+                            if v.lower() in e_str or e_str in v.lower():
+                                return v
+                                
+                        if p_str.lower() == 'materiali':
+                            if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
+                            if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
+                            if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
+                            if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str: return 'Inerti'
+                            if 'asfalto' in e_str or 'bitume' in e_str: return 'Asfalto/Bitume'
+                            if 'legno' in e_str: return 'Legno'
+                            if 'vetro' in e_str: return 'Vetro'
+                            if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
+                        elif p_str.lower() == 'rifiuti':
+                            if 'scavo' in e_str or 'terra' in e_str: return 'Inerti / Macerie di demolizione'
+                            if 'calcestruzzo' in e_str: return 'Calcestruzzo di risulta'
+                            if 'acciaio' in e_str or 'ferro' in e_str: return 'Metallo / Acciaio di scarto'
+                            if 'legno' in e_str: return 'Legno da cantiere'
+                        elif p_str.lower() in ['trasporti', 'macchinari']:
+                            if 'diesel' in e_str or 'gasolio' in e_str: return 'Diesel'
+                            if 'benzina' in e_str or 'petrol' in e_str: return 'Petrol'
+                            
+                        match = get_close_matches(str(elemento_grezzo), voci_disponibili, n=1, cutoff=0.1)
+                        if match:
+                            return match[0]
+                            
+                        return elemento_grezzo
+
+                    df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(
+                        lambda row: mappa_voce_a_lci(row['Parametro'], row['Elemento']), axis=1
+                    )
+                    
+                    st.session_state['df_cantiere'] = df_cantiere_grezzo
+                    st.success("Documenti elaborati e normalizzati con successo dall'IA!")
+            except Exception as e:
+                st.error(f"Errore durante l'elaborazione con l'IA: {e}")
+
+with tab2:
+    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Importa il file in formato CSV contenente la serie temporale dei consumi.</p>", unsafe_allow_html=True)
+    file_cantiere = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed", key="csv_manuale")
+    if file_cantiere:
+        try:
+            st.session_state['df_cantiere'] = pd.read_csv(file_cantiere)
+            st.success("File CSV caricato correttamente!")
+        except Exception as e:
+            st.error(f"Errore nella lettura del file: {e}")
+
 st.markdown("</div>", unsafe_allow_html=True)
 
-if file_cantiere:
+# =====================================================================
+# ELABORAZIONE E ANALISI LCA
+# =====================================================================
+if 'df_cantiere' in st.session_state:
+    df_cantiere = st.session_state['df_cantiere']
+    
+    # Blindatura nomi colonne
+    mappa_colonne_finali = {}
+    for col in df_cantiere.columns:
+        c_low = str(col).strip().lower()
+        if 'data' in c_low or 'date' in c_low:
+            mappa_colonne_finali[col] = 'Data'
+        elif 'param' in c_low or 'categ' in c_low:
+            mappa_colonne_finali[col] = 'Parametro'
+        elif 'elem' in c_low or 'material' in c_low:
+            mappa_colonne_finali[col] = 'Elemento'
+        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low:
+            mappa_colonne_finali[col] = 'Quantita'
+            
+    df_cantiere.rename(columns=mappa_colonne_finali, inplace=True)
+    
     try:
-        df_cantiere = pd.read_csv(file_cantiere)
-        
         for col in ['Data', 'Parametro', 'Elemento', 'Quantita']:
             if col not in df_cantiere.columns:
-                st.error(f"Errore di struttura: La colonna '{col}' risulta assente nel file CSV.")
+                st.error(f"Errore di struttura: La colonna '{col}' risulta assente.")
                 st.stop()
         
         df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
         
-        # --- NORMALIZZAZIONE ROBUSTA PER IL MERGE ---
-        # Converte in minuscolo e rimuove gli spazi per evitare problemi di maiuscole/minuscole o spaziatura nei parametri
+        # Normalizzazione robusta per il merge
         df_cantiere['Parametro_match'] = df_cantiere['Parametro'].astype(str).str.strip().str.lower()
         df_cantiere['Elemento_match'] = df_cantiere['Elemento'].astype(str).str.strip().str.lower()
         
@@ -214,7 +378,6 @@ if file_cantiere:
             suffixes=('', '_lci')
         )
         
-        # Ripristina i nomi originali delle colonne pulite se necessario
         df_completo['Parametro'] = df_completo['Parametro'].fillna(df_completo['Parametro_match'])
         df_completo['Elemento'] = df_completo['Elemento'].fillna(df_completo['Elemento_match'])
         df_completo.drop(columns=['Parametro_match', 'Elemento_match'], inplace=True, errors='ignore')
@@ -223,13 +386,13 @@ if file_cantiere:
         
         mancanti = df_completo[df_completo['Fattore_Emissione'].isnull()]
         if not mancanti.empty:
-            st.error(f"Elementi o Parametri non riconosciuti nel database LCI: {mancanti['Elemento'].unique().tolist()}")
-            st.stop()
+            st.warning(f"Elementi o Parametri non riconosciuti nel database LCI (calcolati a zero): {mancanti['Elemento'].unique().tolist()}")
+            df_completo['Fattore_Emissione'] = df_completo['Fattore_Emissione'].fillna(0)
             
         df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
         df_completo['CO2_Normalizzata'] = df_completo['CO2_Totale_kg'] / dimensione_cantiere
         
-        # --- FILTRO TEMPORALE SICURO ---
+        # --- FILTRO TEMPORALE ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
         st.subheader("Filtro Temporale")
         st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 15px;'>Seleziona l'arco temporale di interesse per l'analisi.</p>", unsafe_allow_html=True)
@@ -326,10 +489,44 @@ if file_cantiere:
                 )
                 return fig
 
-            # Grafico Totale
+            # 1. Grafico Totale
             df_totale = df_filtrato.groupby('Data')['CO2_Normalizzata'].sum().reset_index()
             fig_tot = genera_figura(df_totale, 'Data', 'CO2_Normalizzata', f"Andamento Complessivo (kg CO₂e / {unita})", "#0B0752")
             st.plotly_chart(fig_tot, use_container_width=True)
+            
+            # 2. Diagramma a Torta (Incidenza Percentuale) subito sotto all'istogramma
+            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+            df_pie = df_filtrato.groupby('Parametro')['CO2_Normalizzata'].sum().reset_index()
+            
+            colori_parametri = {
+                'Materiali': "#B80D0D", 
+                'Rifiuti': "#078303", 
+                'Trasporti': "#732BB7", 
+                'Energia': "#f6de03",
+                'Acqua': "#53DCFE", 
+                'Macchinari': "#8a929e"
+            }
+            
+            fig_pie = px.pie(
+                df_pie, 
+                values='CO2_Normalizzata', 
+                names='Parametro',
+                title="Incidenza Percentuale delle Categorie sulle Emissioni Totali",
+                color='Parametro',
+                color_discrete_map=colori_parametri,
+                hole=0.4
+            )
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#ffffff', width=2)))
+            fig_pie.update_layout(
+                height=450, 
+                font_family="Inter", 
+                showlegend=True, 
+                title_font_size=14, 
+                title_font_color="#374151",
+                plot_bgcolor='rgba(0,0,0,0)', 
+                paper_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
 
             col_exp1, col_exp2 = st.columns(2)
             with col_exp1:
@@ -343,15 +540,6 @@ if file_cantiere:
 
             st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
             st.subheader("Disaggregazione per Categoria")
-            
-            colori_parametri = {
-                'Materiali': "#B80D0D", 
-                'Rifiuti': "#078303", 
-                'Trasporti': "#732BB7", 
-                'Energia': "#f6de03",
-                'Acqua': "#53DCFE", 
-                'Macchinari': "#8a929e"
-            }
             
             parametri_presenti = df_filtrato['Parametro'].dropna().unique()
             col_grafici = st.columns(2)
@@ -382,4 +570,4 @@ if file_cantiere:
     except Exception as e:
         st.error(f"Si è verificato un errore durante l'elaborazione: {e}")
 else:
-    st.info("Caricare un file CSV di progetto per avviare l'elaborazione analitica.")
+    st.info("Carica i documenti di progetto tramite IA o seleziona un file CSV per avviare l'elaborazione analitica.")
