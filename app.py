@@ -26,7 +26,6 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
-    /* Card minimaliste con bordo verde pastello */
     div.minimal-card {
         background-color: #ffffff !important;
         border: 1.5px solid #d5ddd1 !important;
@@ -55,7 +54,6 @@ st.markdown("""
         color: #4b5563;
     }
 
-    /* Stile per i Bottoni Nativi (Download e Link) in Verde Pastello */
     [data-testid="stDownloadButton"] button, 
     [data-testid="stLinkButton"] button,
     [data-testid="baseButton-secondary"] {
@@ -123,7 +121,7 @@ with col_cfg1:
         dimensione_cantiere = st.number_input("Superficie coperta complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- LETTURA DATABASE LCI ---
+# --- LETTURA ROBUSTA DATABASE LCI ---
 @st.cache_data
 def carica_database_lci(percorso_file):
     if not os.path.exists(percorso_file):
@@ -145,32 +143,22 @@ def carica_database_lci(percorso_file):
     
     for foglio in xls.sheet_names:
         df_temp = pd.read_excel(xls, sheet_name=foglio)
-        col_el = None
-        col_fat = None
-        
         if foglio in mappatura:
             col_el = mappatura[foglio]['nome_elemento']
             col_fat = mappatura[foglio]['nome_fattore']
             if foglio in ['Trasporti', 'Macchinari']:
                 df_temp = df_temp.iloc[0:9].copy()
         else:
-            possibili_nomi_elemento = ['Elemento', 'Macchinario', 'Nome', 'Acqua', 'Tipo', 'Fuel']
-            possibili_nomi_fattore = ['Fattore_Emissione', 'kg CO2eq', 'Emissione', 'emissioni_kg_co2eq_kg', 'kg co2 per kg of fuel']
+            col_el, col_fat = df_temp.columns[0], df_temp.columns[1]
             
-            for c in df_temp.columns:
-                if any(x.lower() in str(c).lower() for x in possibili_nomi_elemento) and col_el is None:
-                    col_el = c
-                if any(x.lower() in str(c).lower() for x in possibili_nomi_fattore) and col_fat is None:
-                    col_fat = c
-        
         if col_el in df_temp.columns and col_fat in df_temp.columns:
-            df_temp = df_temp[[col_el, col_fat]].copy()
-            df_temp.rename(columns={col_el: 'Elemento', col_fat: 'Fattore_Emissione'}, inplace=True)
-            df_temp['Parametro'] = foglio 
-            df_temp['Fattore_Emissione'] = pd.to_numeric(df_temp['Fattore_Emissione'], errors='coerce')
-            df_inv = pd.concat([df_inv, df_temp], ignore_index=True)
+            df_sub = df_temp[[col_el, col_fat]].copy()
+            df_sub.columns = ['Elemento_LCI', 'Fattore_Emissione']
+            df_sub['Parametro'] = foglio
+            df_sub['Fattore_Emissione'] = pd.to_numeric(df_sub['Fattore_Emissione'], errors='coerce')
+            df_inv = pd.concat([df_inv, df_sub], ignore_index=True)
                 
-    return df_inv.dropna(subset=['Elemento', 'Fattore_Emissione'])
+    return df_inv.dropna(subset=['Elemento_LCI', 'Fattore_Emissione'])
 
 percorso_lci = "LCI.xlsx"
 df_inventario = carica_database_lci(percorso_lci)
@@ -186,7 +174,7 @@ st.subheader("Caricamento Dataset di Progetto")
 tab1, tab2 = st.tabs(["✨ Elaborazione Intelligente (IA)", "📂 Caricamento CSV Manuale"])
 
 with tab1:
-    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel). L'IA estrarrà i dati, mapperà i materiali e calcolerà i trasporti automaticamente basandosi TASSATIVAMENTE sulle voci del file LCI.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel). L'IA estrarrà i dati e li mapperà sulle voci esatte del file LCI.</p>", unsafe_allow_html=True)
     
     file_computo = st.file_uploader("Computo Metrico (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_comp")
     file_cronoprogramma = st.file_uploader("Cronoprogramma / Gantt (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_crono")
@@ -201,7 +189,7 @@ with tab1:
         else:
             try:
                 client = genai.Client(api_key=api_key)
-                with st.spinner("L'intelligenza artificiale sta analizzando gli elaborati e associando i materiali..."):
+                with st.spinner("L'intelligenza artificiale sta analizzando gli elaborati..."):
                     contents = []
                     
                     for file_obj in [file_computo, file_cronoprogramma, file_trasporti]:
@@ -220,11 +208,9 @@ with tab1:
                                 types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
                             )
                     
-                    # --- CREAZIONE DINAMICA DEL VOCABOLARIO IA ---
-                    # L'IA riceverà una lista esatta divisa per Parametro per non commettere errori
                     vocabolario_ia = ""
                     for param in df_inventario['Parametro'].unique():
-                        voci_valide = df_inventario[df_inventario['Parametro'] == param]['Elemento'].astype(str).unique().tolist()
+                        voci_valide = df_inventario[df_inventario['Parametro'] == param]['Elemento_LCI'].astype(str).unique().tolist()
                         voci_str = ", ".join([f"'{v.strip()}'" for v in voci_valide])
                         vocabolario_ia += f"  - Se 'Parametro' è {param}, scegli tra: [{voci_str}]\n"
                     
@@ -238,14 +224,14 @@ with tab1:
                     Regole ferree:
                     1. 'Data': Formato AAAA-MM-GG. Se c'è un cronoprogramma, distribuisci le quantità nelle date corrette.
                     2. 'Parametro': Scegli ESCLUSIVAMENTE tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
-                    3. 'Elemento': DEVI AGIRE COME UN CLASSIFICATORE INFLESSIBILE. Leggi la descrizione complessa della voce (es. "Calcestruzzo strutturale Rck 30", "Acciaio B450C", "Tubi fognari") e TRADUCILA in base al parametro usando SOLO una voce dal seguente elenco:
+                    3. 'Elemento': DEVI AGIRE COME UN CLASSIFICATORE. Leggi la voce del computo e traducila usando SOLO una voce dal seguente elenco in base al parametro:
                     
 {vocabolario_ia}
                     
-                    E' ASSOLUTAMENTE VIETATO usare i nomi originali presenti nel computo. Devi identificare il materiale più simile a livello semantico e usare il termine esatto contenuto tra le parentesi quadre.
-                    4. 'Quantita': Valore numerico (per trasporti: massa calcolata in tonnellate moltiplicata per i km indicati).
+                    È vietato usare i nomi originali del computo. Usa esclusivamente i termini esatti contenuti tra virgolette nelle liste sopra.
+                    4. 'Quantita': Valore numerico (per i trasporti: massa in tonnellate x km).
                     
-                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, senza blocchi Markdown, pronto per pd.read_csv().
+                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, pronto per pd.read_csv().
                     """
                     contents.append(prompt_sistema)
                     
@@ -269,7 +255,7 @@ with tab1:
                 st.error(f"Errore durante l'elaborazione con l'IA: {e}")
 
 with tab2:
-    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Importa il file in formato CSV contenente la serie temporale dei consumi già formattata (Data, Parametro, Elemento, Quantita).</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Importa il file CSV contenente la serie temporale dei consumi (Data, Parametro, Elemento, Quantita).</p>", unsafe_allow_html=True)
     file_csv_manuale = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed", key="csv_manuale")
     if file_csv_manuale:
         try:
@@ -299,7 +285,6 @@ if 'df_cantiere' in st.session_state:
         )
     
     try:
-        # Validazione Colonne
         for col in ['Data', 'Parametro', 'Elemento', 'Quantita']:
             if col not in df_cantiere.columns:
                 st.error(f"Errore di struttura: La colonna '{col}' risulta assente dal CSV generato.")
@@ -307,15 +292,13 @@ if 'df_cantiere' in st.session_state:
         
         df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
         
-        # --- NORMALIZZAZIONE TESTI PER IL MERGE ---
-        # Togliamo spazi invisibili e convertiamo tutto in minuscolo
+        # --- NORMALIZZAZIONE PER IL MERGE ROBUSTO ---
         df_cantiere['Elemento_match'] = df_cantiere['Elemento'].astype(str).str.strip().str.lower()
         df_cantiere['Parametro_match'] = df_cantiere['Parametro'].astype(str).str.strip().str.lower()
         
-        df_inventario['Elemento_match'] = df_inventario['Elemento'].astype(str).str.strip().str.lower()
+        df_inventario['Elemento_match'] = df_inventario['Elemento_LCI'].astype(str).str.strip().str.lower()
         df_inventario['Parametro_match'] = df_inventario['Parametro'].astype(str).str.strip().str.lower()
         
-        # Merge robusto
         df_completo = pd.merge(
             df_cantiere, 
             df_inventario, 
@@ -323,10 +306,8 @@ if 'df_cantiere' in st.session_state:
             how='left'
         )
         
-        # Rimuoviamo le colonne di supporto match usate per l'incrocio
         df_completo = df_completo.drop(columns=['Parametro_match', 'Elemento_match'])
         
-        # Controllo elementi non abbinati
         mancanti = df_completo[df_completo['Fattore_Emissione'].isnull()]
         if not mancanti.empty:
             st.warning(f"Attenzione: Elementi non riconosciuti nel database LCI e calcolati a zero: {mancanti['Elemento'].unique().tolist()}")
@@ -481,7 +462,7 @@ if 'df_cantiere' in st.session_state:
                     csv_cat = df_p.to_csv(index=False).encode('utf-8')
                     st.download_button(f"Scarica dati {param} (CSV)", data=csv_cat, file_name=f"dati_{param.lower()}.csv", mime="text/csv", key=f"dl_{param}")
 
-            # Tabella Dati
+            # Tabella Dati Completa
             st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
             with st.expander("Esporta / Visualizza matrice dati completa calcolata"):
                 st.dataframe(df_filtrato.drop(columns=['Data_dt']), use_container_width=True)
