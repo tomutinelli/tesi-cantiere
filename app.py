@@ -228,7 +228,12 @@ with tab1:
                                 types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
                             )
                     
-                    prompt_sistema = """
+                    # Estraiamo la lista degli elementi validi dal tuo database LCI
+                    # per imporli come vocabolario obbligatorio all'IA
+                    elementi_validi = df_inventario['Elemento'].unique().tolist()
+                    lista_elementi_str = ", ".join([str(e) for e in elementi_validi])
+                    
+                    prompt_sistema = f"""
                     Sei un esperto ingegnere edile e analista LCA. 
                     Il tuo compito è analizzare i documenti di progetto forniti in input (computi, cronoprogrammi, note trasporti) e generarne un'unica tabella CSV pulita.
                     
@@ -238,7 +243,9 @@ with tab1:
                     Regole ferree:
                     1. 'Data': Formato AAAA-MM-GG. Se c'è un cronoprogramma, distribuisci le quantità nelle date corrette.
                     2. 'Parametro': Scegli tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
-                    3. 'Elemento': Il nome dell'elemento o del combustibile coerente con i database LCA.
+                    3. 'Elemento': DEVI TASSATIVAMENTE usare SOLO uno dei seguenti nomi esatti: 
+                    [{lista_elementi_str}]. 
+                    Non inventare nomi. Leggi la descrizione nel computo e scegli il nome dalla lista qui sopra che corrisponde meglio semanticamente.
                     4. 'Quantita': Valore numerico (per trasporti: massa in tonnellate x km).
                     
                     Restituisci ESCLUSIVAMENTE il codice CSV grezzo, pronto per pd.read_csv().
