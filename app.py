@@ -61,9 +61,9 @@ if st.button("Elabora e Normalizza con IA"):
             contents.append(prompt_sistema)
             
             try:
-                # Gemini 1.5 Flash (o 2.5 Flash) è perfetto per elaborare velocemente PDF e testi lunghi
+                # Utilizzo del modello aggiornato richiesto dalle API
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.6-flash',
                     contents=contents
                 )
                 
