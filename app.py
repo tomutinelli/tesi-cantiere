@@ -209,7 +209,6 @@ with tab1:
                                 types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
                             )
                     
-                    # Prompt semplificato ed efficiente per l'estrazione pura
                     prompt_sistema = """
                     Sei un ingegnere edile. Estrai i dati dai documenti forniti (computo, cronoprogramma, trasporti) e restituisci una tabella CSV pulita con queste esatte 4 colonne:
                     Data,Parametro,Elemento,Quantita
@@ -238,24 +237,43 @@ with tab1:
                     
                     df_cantiere_grezzo = pd.read_csv(io.StringIO(csv_testo))
                     
-                    # --- MOTORE PYTHON DI CORRETTORE / TRADUZIONE SEMANTICA ---
-                    # Questo script prende le descrizioni grezze dell'IA e le forza sui nomi esatti del database LCI
+                    # --- CORRETTORE AUTOMATICO INTESTAZIONI ---
+                    colonne_mappa = {}
+                    for c in df_cantiere_grezzo.columns:
+                        c_low = str(c).strip().lower()
+                        if 'data' in c_low or 'date' in c_low or 'giorno' in c_low:
+                            colonne_mappa[c] = 'Data'
+                        elif 'param' in c_low or 'categ' in c_low:
+                            colonne_mappa[c] = 'Parametro'
+                        elif 'elem' in c_low or 'material' in c_low or 'voce' in c_low:
+                            colonne_mappa[c] = 'Elemento'
+                        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'amount' in c_low:
+                            colonne_mappa[c] = 'Quantita'
+                    
+                    df_cantiere_grezzo.rename(columns=colonne_mappa, inplace=True)
+                    
+                    if 'Parametro' not in df_cantiere_grezzo.columns:
+                        df_cantiere_grezzo['Parametro'] = 'Materiali'
+                    if 'Data' not in df_cantiere_grezzo.columns:
+                        df_cantiere_grezzo['Data'] = str(date.today())
+                    if 'Elemento' not in df_cantiere_grezzo.columns:
+                        df_cantiere_grezzo['Elemento'] = 'Calcestruzzo'
+                    if 'Quantita' not in df_cantiere_grezzo.columns:
+                        df_cantiere_grezzo['Quantita'] = 1.0
+
+                    # --- MOTORE PYTHON DI TRADUZIONE SEMANTICA ---
                     def mappa_voce_a_lci(parametro, elemento_grezzo):
                         p_str = str(parametro).strip()
                         e_str = str(elemento_grezzo).strip().lower()
                         
-                        # Filtra le voci valide nel database per quel parametro
                         voci_disponibili = df_inventario[df_inventario['Parametro'].str.lower() == p_str.lower()]['Elemento_LCI'].tolist()
                         if not voci_disponibili:
-                            # Se il parametro non coincide perfettamente, prendiamo tutte le voci
                             voci_disponibili = df_inventario['Elemento_LCI'].tolist()
                             
-                        # Controllo corrispondenze dirette o parole chiave
                         for v in voci_disponibili:
                             if v.lower() in e_str or e_str in v.lower():
                                 return v
                                 
-                        # Traduzioni mirate per i casi edili più comuni
                         if p_str.lower() == 'materiali':
                             if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
                             if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
@@ -274,14 +292,12 @@ with tab1:
                             if 'diesel' in e_str or 'gasolio' in e_str: return 'Diesel'
                             if 'benzina' in e_str or 'petrol' in e_str: return 'Petrol'
                             
-                        # Tentativo di fuzzy matching automatico con Python
-                        match = get_close_matches(elemento_grezzo, voci_disponibili, n=1, cutoff=0.1)
+                        match = get_close_matches(str(elemento_grezzo), voci_disponibili, n=1, cutoff=0.1)
                         if match:
                             return match[0]
                             
-                        return elemento_grezzo # Fallback se proprio non trova nulla
+                        return elemento_grezzo
 
-                    # Applica la traduzione riga per riga
                     df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(
                         lambda row: mappa_voce_a_lci(row['Parametro'], row['Elemento']), axis=1
                     )
@@ -310,7 +326,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere']
     
-    with st.expander("👀 Visualizza Anteprima Dati Input Classificati da Python"):
+    with st.expander("👀 Visualizza Anteprima Dati Input Classificati"):
         st.dataframe(df_cantiere, use_container_width=True)
         csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
         st.download_button(
