@@ -5,9 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime, date
 import os
 import io
-from difflib import get_close_matches
-from google import genai
-from google.genai import types
+import base64
 
 # Impostazioni della pagina
 st.set_page_config(page_title="EcoSite Tracker | LCA Dashboard", layout="wide")
@@ -27,6 +25,7 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
+    /* Card minimaliste con bordo verde pastello */
     div.minimal-card {
         background-color: #ffffff !important;
         border: 1.5px solid #d5ddd1 !important;
@@ -55,43 +54,46 @@ st.markdown("""
         color: #4b5563;
     }
 
-    [data-testid="stDownloadButton"] button, 
-    [data-testid="stLinkButton"] button,
-    [data-testid="baseButton-secondary"] {
+    .custom-dl-btn {
+        text-decoration: none !important;
         background-color: #ffffff !important;
         border: 1.5px solid #d5ddd1 !important;
         color: #374151 !important;
+        padding: 0.6rem 1rem !important;
         border-radius: 8px !important;
-        transition: all 0.25s ease-in-out !important;
+        font-size: 0.9rem !important;
         font-weight: 500 !important;
+        display: block !important;
+        text-align: center !important;
         width: 100% !important;
+        margin-top: 8px !important;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02) !important;
+        transition: all 0.25s ease-in-out !important;
+        letter-spacing: 0.3px !important;
     }
     
-    [data-testid="stDownloadButton"] button:hover, 
-    [data-testid="stLinkButton"] button:hover,
-    [data-testid="baseButton-secondary"]:hover {
+    .custom-dl-btn:hover {
         border-color: #a7b89f !important;
         background-color: #f4f7f3 !important;
         color: #111827 !important;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.06) !important;
+        transform: translateY(-2px) !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- DIZIONARIO COLORI GLOBALE ---
-colori_parametri = {
-    'Materiali': "#B80D0D", 
-    'Rifiuti': "#078303", 
-    'Trasporti': "#732BB7", 
-    'Energia': "#f6de03",
-    'Acqua': "#53DCFE", 
-    'Macchinari': "#8a929e"
-}
+# --- FUNZIONE DOWNLOAD BASE64 CON TARGET TOP ---
+def genera_link_download(data_bytes, filename, button_text):
+    b64 = base64.b64encode(data_bytes).decode()
+    mime = "text/csv" if filename.endswith('.csv') else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return f'<a class="custom-dl-btn" href="data:{mime};base64,{b64}" download="{filename}" target="_top">{button_text}</a>'
 
 # --- GUIDA METODOLOGICA ---
 with st.expander("Note metodologiche e specifiche di utilizzo"):
     st.markdown("""
     <p style='color: #4b5563; font-size: 0.95rem; line-height: 1.6; margin-bottom: 0;'>
     Questo strumento calcola l'impronta di carbonio (kg di CO₂e) in fase di progetto incrociando i dati di consumo giornaliero con il database LCI di riferimento. 
+    Il file CSV di progetto deve essere strutturato in 4 colonne: <code>Data</code> (AAAA-MM-GG), <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code>.
     </p>
     """, unsafe_allow_html=True)
 
@@ -119,10 +121,10 @@ with col_cfg1:
         dimensione_cantiere = st.number_input("Estensione longitudinale complessiva (metri)", min_value=0.1, value=100.0, step=1.0)
     else:
         unita = "m²"
-        dimensione_cantiere = st.number_input("Superficie coperta complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
+        dimensione_cantiere = st.number_input("Area di cantiere complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# --- LETTURA ROBUSTA DATABASE LCI ---
+# --- LETTURA DATABASE LCI ---
 @st.cache_data
 def carica_database_lci(percorso_file):
     if not os.path.exists(percorso_file):
@@ -144,22 +146,32 @@ def carica_database_lci(percorso_file):
     
     for foglio in xls.sheet_names:
         df_temp = pd.read_excel(xls, sheet_name=foglio)
+        col_el = None
+        col_fat = None
+        
         if foglio in mappatura:
             col_el = mappatura[foglio]['nome_elemento']
             col_fat = mappatura[foglio]['nome_fattore']
             if foglio in ['Trasporti', 'Macchinari']:
                 df_temp = df_temp.iloc[0:9].copy()
         else:
-            col_el, col_fat = df_temp.columns[0], df_temp.columns[1]
+            possibili_nomi_elemento = ['Elemento', 'Macchinario', 'Nome', 'Acqua', 'Tipo', 'Fuel']
+            possibili_nomi_fattore = ['Fattore_Emissione', 'kg CO2eq', 'Emissione', 'emissioni_kg_co2eq_kg', 'kg co2 per kg of fuel']
             
+            for c in df_temp.columns:
+                if any(x.lower() in str(c).lower() for x in possibili_nomi_elemento) and col_el is None:
+                    col_el = c
+                if any(x.lower() in str(c).lower() for x in possibili_nomi_fattore) and col_fat is None:
+                    col_fat = c
+        
         if col_el in df_temp.columns and col_fat in df_temp.columns:
-            df_sub = df_temp[[col_el, col_fat]].copy()
-            df_sub.columns = ['Elemento_LCI', 'Fattore_Emissione']
-            df_sub['Parametro'] = foglio
-            df_sub['Fattore_Emissione'] = pd.to_numeric(df_sub['Fattore_Emissione'], errors='coerce')
-            df_inv = pd.concat([df_inv, df_sub], ignore_index=True)
+            df_temp = df_temp[[col_el, col_fat]].copy()
+            df_temp.rename(columns={col_el: 'Elemento', col_fat: 'Fattore_Emissione'}, inplace=True)
+            df_temp['Parametro'] = foglio 
+            df_temp['Fattore_Emissione'] = pd.to_numeric(df_temp['Fattore_Emissione'], errors='coerce')
+            df_inv = pd.concat([df_inv, df_temp], ignore_index=True)
                 
-    return df_inv.dropna(subset=['Elemento_LCI', 'Fattore_Emissione'])
+    return df_inv.dropna(subset=['Elemento', 'Fattore_Emissione'])
 
 percorso_lci = "LCI.xlsx"
 df_inventario = carica_database_lci(percorso_lci)
@@ -168,224 +180,56 @@ if df_inventario is None or df_inventario.empty:
     st.error(f"Errore critico: Il database '{percorso_lci}' non è reperibile o non è valido sul server.")
     st.stop()
 
-# --- BLOCCO INPUT DATI (IA + TRADUTTORE PYTHON) ---
+# --- CARICAMENTO CSV UTENTE ---
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Caricamento Dataset di Progetto")
-
-tab1, tab2 = st.tabs(["✨ Elaborazione Intelligente (IA)", "📂 Caricamento CSV Manuale"])
-
-with tab1:
-    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel). L'IA estrarrà i dati grezzi e il motore Python li mapperà automaticamente sulle voci esatte del file LCI.</p>", unsafe_allow_html=True)
-    
-    file_computo = st.file_uploader("Computo Metrico (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_comp")
-    file_cronoprogramma = st.file_uploader("Cronoprogramma / Gantt (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_crono")
-    file_trasporti = st.file_uploader("Note distanze trasporti (TXT o PDF)", type=['txt', 'pdf', 'xlsx', 'csv'], key="ia_trasp")
-
-    if st.button("Elabora e Normalizza con IA", key="btn_ia"):
-        api_key = st.secrets.get("GEMINI_API_KEY")
-        if not api_key:
-            st.error("Chiave API mancante nei Secrets. Inserisci GEMINI_API_KEY per utilizzare questa funzione.")
-        elif not file_computo:
-            st.warning("Carica almeno il file del computo metrico per procedere.")
-        else:
-            try:
-                client = genai.Client(api_key=api_key)
-                with st.spinner("L'intelligenza artificiale sta leggendo gli elaborati..."):
-                    contents = []
-                    
-                    for file_obj in [file_computo, file_cronoprogramma, file_trasporti]:
-                        if file_obj is not None:
-                            estensione = file_obj.name.split('.')[-1].lower()
-                            if estensione == 'pdf':
-                                mime = 'application/pdf'
-                            elif estensione == 'xlsx':
-                                mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                            elif estensione == 'csv':
-                                mime = 'text/csv'
-                            else:
-                                mime = 'text/plain'
-                            
-                            contents.append(
-                                types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
-                            )
-                    
-                    prompt_sistema = """
-                    Sei un ingegnere edile. Estrai i dati dai documenti forniti (computo, cronoprogramma, trasporti) e restituisci una tabella CSV pulita con queste esatte 4 colonne:
-                    Data,Parametro,Elemento,Quantita
-                    
-                    - Data: Formato AAAA-MM-GG.
-                    - Parametro: Scegli tassativamente tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
-                    - Elemento: Riporta la descrizione originale dell'elemento o del materiale trovata nel computo (es. "Calcestruzzo strutturale Rck 30", "Acciaio B450C", "Diesel").
-                    - Quantita: Valore numerico (per i trasporti, calcola la massa in tonnellate moltiplicata per i chilometri).
-                    
-                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, senza blocchi Markdown, pronto per pd.read_csv().
-                    """
-                    contents.append(prompt_sistema)
-                    
-                    response = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=contents
-                    )
-                    
-                    csv_testo = response.text.strip()
-                    if csv_testo.startswith("```"):
-                        csv_testo = csv_testo.split("```")[1]
-                        if csv_testo.startswith("csv"):
-                            csv_testo = csv_testo[3:].strip()
-                        elif csv_testo.startswith("\n"):
-                            csv_testo = csv_testo.strip()
-                    
-                    df_cantiere_grezzo = pd.read_csv(io.StringIO(csv_testo))
-                    
-                    # --- CORRETTORE AUTOMATICO INTESTAZIONI ---
-                    colonne_mappa = {}
-                    for c in df_cantiere_grezzo.columns:
-                        c_low = str(c).strip().lower()
-                        if 'data' in c_low or 'date' in c_low or 'giorno' in c_low:
-                            colonne_mappa[c] = 'Data'
-                        elif 'param' in c_low or 'categ' in c_low:
-                            colonne_mappa[c] = 'Parametro'
-                        elif 'elem' in c_low or 'material' in c_low or 'voce' in c_low:
-                            colonne_mappa[c] = 'Elemento'
-                        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'amount' in c_low:
-                            colonne_mappa[c] = 'Quantita'
-                    
-                    df_cantiere_grezzo.rename(columns=colonne_mappa, inplace=True)
-                    
-                    if 'Parametro' not in df_cantiere_grezzo.columns:
-                        df_cantiere_grezzo['Parametro'] = 'Materiali'
-                    if 'Data' not in df_cantiere_grezzo.columns:
-                        df_cantiere_grezzo['Data'] = str(date.today())
-                    if 'Elemento' not in df_cantiere_grezzo.columns:
-                        df_cantiere_grezzo['Elemento'] = 'Calcestruzzo'
-                    if 'Quantita' not in df_cantiere_grezzo.columns:
-                        df_cantiere_grezzo['Quantita'] = 1.0
-
-                    # --- MOTORE PYTHON DI TRADUZIONE SEMANTICA ---
-                    def mappa_voce_a_lci(parametro, elemento_grezzo):
-                        p_str = str(parametro).strip()
-                        e_str = str(elemento_grezzo).strip().lower()
-                        
-                        voci_disponibili = df_inventario[df_inventario['Parametro'].str.lower() == p_str.lower()]['Elemento_LCI'].tolist()
-                        if not voci_disponibili:
-                            voci_disponibili = df_inventario['Elemento_LCI'].tolist()
-                            
-                        for v in voci_disponibili:
-                            if v.lower() in e_str or e_str in v.lower():
-                                return v
-                                
-                        if p_str.lower() == 'materiali':
-                            if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
-                            if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
-                            if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
-                            if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str: return 'Inerti'
-                            if 'asfalto' in e_str or 'bitume' in e_str: return 'Asfalto/Bitume'
-                            if 'legno' in e_str: return 'Legno'
-                            if 'vetro' in e_str: return 'Vetro'
-                            if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
-                        elif p_str.lower() == 'rifiuti':
-                            if 'scavo' in e_str or 'terra' in e_str: return 'Inerti / Macerie di demolizione'
-                            if 'calcestruzzo' in e_str: return 'Calcestruzzo di risulta'
-                            if 'acciaio' in e_str or 'ferro' in e_str: return 'Metallo / Acciaio di scarto'
-                            if 'legno' in e_str: return 'Legno da cantiere'
-                        elif p_str.lower() in ['trasporti', 'macchinari']:
-                            if 'diesel' in e_str or 'gasolio' in e_str: return 'Diesel'
-                            if 'benzina' in e_str or 'petrol' in e_str: return 'Petrol'
-                            
-                        match = get_close_matches(str(elemento_grezzo), voci_disponibili, n=1, cutoff=0.1)
-                        if match:
-                            return match[0]
-                            
-                        return elemento_grezzo
-
-                    df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(
-                        lambda row: mappa_voce_a_lci(row['Parametro'], row['Elemento']), axis=1
-                    )
-                    
-                    st.session_state['df_cantiere'] = df_cantiere_grezzo
-                    st.success("Documenti elaborati e normalizzati con successo dal motore Python!")
-            except Exception as e:
-                st.error(f"Errore durante l'elaborazione: {e}")
-
-with tab2:
-    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Importa il file CSV contenente la serie temporale dei consumi (Data, Parametro, Elemento, Quantita).</p>", unsafe_allow_html=True)
-    file_csv_manuale = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed", key="csv_manuale")
-    if file_csv_manuale:
-        try:
-            df_cantiere = pd.read_csv(file_csv_manuale)
-            st.session_state['df_cantiere'] = df_cantiere
-            st.success("File CSV caricato correttamente!")
-        except Exception as e:
-            st.error(f"Errore nella lettura del file: {e}")
-
+st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Importa il file in formato CSV contenente la serie temporale dei consumi.</p>", unsafe_allow_html=True)
+file_cantiere = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed")
 st.markdown("</div>", unsafe_allow_html=True)
 
-# =====================================================================
-# ELABORAZIONE E GRAFICI
-# =====================================================================
-if 'df_cantiere' in st.session_state:
-    df_cantiere = st.session_state['df_cantiere']
-    
-    # --- BLINDATURA NOMI COLONNE ---
-    mappa_colonne_finali = {}
-    for col in df_cantiere.columns:
-        c_low = str(col).strip().lower()
-        if 'data' in c_low or 'date' in c_low:
-            mappa_colonne_finali[col] = 'Data'
-        elif 'param' in c_low or 'categ' in c_low:
-            mappa_colonne_finali[col] = 'Parametro'
-        elif 'elem' in c_low or 'material' in c_low:
-            mappa_colonne_finali[col] = 'Elemento'
-        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low:
-            mappa_colonne_finali[col] = 'Quantita'
-            
-    df_cantiere.rename(columns=mappa_colonne_finali, inplace=True)
-    
-    with st.expander("👀 Visualizza Anteprima Dati Input Classificati"):
-        st.dataframe(df_cantiere, use_container_width=True)
-        csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Scarica Dati Input Normalizzati (CSV)",
-            data=csv_input,
-            file_name="dati_input_cantiere.csv",
-            mime="text/csv",
-            key="dl_input_csv"
-        )
-    
+if file_cantiere:
     try:
-        colonne_obbligatorie = ['Data', 'Parametro', 'Elemento', 'Quantita']
-        for col in colonne_obbligatorie:
+        df_cantiere = pd.read_csv(file_cantiere)
+        
+        for col in ['Data', 'Parametro', 'Elemento', 'Quantita']:
             if col not in df_cantiere.columns:
-                st.error(f"Manca la colonna obbligatoria '{col}' nel dataset. Colonne attuali: {df_cantiere.columns.tolist()}")
+                st.error(f"Errore di struttura: La colonna '{col}' risulta assente nel file CSV.")
                 st.stop()
         
         df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
         
-        # --- NORMALIZZAZIONE PER IL MERGE ROBUSTO ---
-        df_cantiere['Elemento_match'] = df_cantiere['Elemento'].astype(str).str.strip().str.lower()
+        # --- NORMALIZZAZIONE ROBUSTA PER IL MERGE ---
+        # Converte in minuscolo e rimuove gli spazi per evitare problemi di maiuscole/minuscole o spaziatura nei parametri
         df_cantiere['Parametro_match'] = df_cantiere['Parametro'].astype(str).str.strip().str.lower()
+        df_cantiere['Elemento_match'] = df_cantiere['Elemento'].astype(str).str.strip().str.lower()
         
-        df_inventario['Elemento_match'] = df_inventario['Elemento_LCI'].astype(str).str.strip().str.lower()
         df_inventario['Parametro_match'] = df_inventario['Parametro'].astype(str).str.strip().str.lower()
+        df_inventario['Elemento_match'] = df_inventario['Elemento'].astype(str).str.strip().str.lower()
         
         df_completo = pd.merge(
             df_cantiere, 
             df_inventario, 
             on=['Parametro_match', 'Elemento_match'], 
-            how='left'
+            how='left',
+            suffixes=('', '_lci')
         )
         
-        df_completo = df_completo.drop(columns=['Parametro_match', 'Elemento_match'])
+        # Ripristina i nomi originali delle colonne pulite se necessario
+        df_completo['Parametro'] = df_completo['Parametro'].fillna(df_completo['Parametro_match'])
+        df_completo['Elemento'] = df_completo['Elemento'].fillna(df_completo['Elemento_match'])
+        df_completo.drop(columns=['Parametro_match', 'Elemento_match'], inplace=True, errors='ignore')
+        if 'Parametro_lci' in df_completo.columns: df_completo.drop(columns=['Parametro_lci'], inplace=True)
+        if 'Elemento_lci' in df_completo.columns: df_completo.drop(columns=['Elemento_lci'], inplace=True)
         
         mancanti = df_completo[df_completo['Fattore_Emissione'].isnull()]
         if not mancanti.empty:
-            st.warning(f"Attenzione: Elementi non riconosciuti nel database LCI e calcolati a zero: {mancanti['Elemento'].unique().tolist()}")
-            df_completo['Fattore_Emissione'] = df_completo['Fattore_Emissione'].fillna(0)
+            st.error(f"Elementi o Parametri non riconosciuti nel database LCI: {mancanti['Elemento'].unique().tolist()}")
+            st.stop()
             
         df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
         df_completo['CO2_Normalizzata'] = df_completo['CO2_Totale_kg'] / dimensione_cantiere
         
-        # --- FILTRO TEMPORALE ---
+        # --- FILTRO TEMPORALE SICURO ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
         st.subheader("Filtro Temporale")
         st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 15px;'>Seleziona l'arco temporale di interesse per l'analisi.</p>", unsafe_allow_html=True)
@@ -415,14 +259,7 @@ if 'df_cantiere' in st.session_state:
 
         # --- VISUALIZZAZIONE GRAFICI ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-        
-        col_title, col_link = st.columns([2, 1])
-        with col_title:
-            st.subheader("Risultati Analitici")
-        with col_link:
-            link_app = "https://INSERISCI-QUI-IL-TUO-LINK.streamlit.app" 
-            st.link_button("Apri a schermo intero per esportare", link_app)
-            
+        st.subheader("Risultati Analitici")
         st.markdown(f"<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 25px;'>I valori visualizzati esprimono l'incidenza normalizzata rispetto all'unità funzionale complessiva (<b>{dimensione_cantiere} {unita}</b>).</p>", unsafe_allow_html=True)
         
         if df_filtrato.empty:
@@ -432,6 +269,7 @@ if 'df_cantiere' in st.session_state:
                 "Modalità di visualizzazione grafica",
                 options=[
                     "Standard (Barre temporali)", 
+                    "Distribuzione (KDE / Frequenza)", 
                     "Linea Media (Andamento con media mobile)",
                     "Linea Media Fissa (Orizzontale)"
                 ],
@@ -443,7 +281,14 @@ if 'df_cantiere' in st.session_state:
                 if df_dat.empty:
                     return go.Figure()
                     
-                if "Media mobile" in modo_visualizzazione or "Media (Andamento" in modo_visualizzazione:
+                if "Distribuzione" in modo_visualizzazione:
+                    fig = px.histogram(
+                        df_dat, x=y_col, nbins=20, marginal="violin",
+                        title=f"{titolo} - Distribuzione Frazionale",
+                        labels={y_col: f'kg CO₂e / {unita}', 'count': 'Frequenza'},
+                        color_discrete_sequence=[colore_base]
+                    )
+                elif "Media mobile" in modo_visualizzazione or "Media (Andamento" in modo_visualizzazione:
                     df_dat = df_dat.sort_values(by=x_col)
                     df_dat['Media_Mobile'] = df_dat[y_col].rolling(window=7, min_periods=1).mean()
                     fig = go.Figure()
@@ -455,67 +300,58 @@ if 'df_cantiere' in st.session_state:
                     fig = go.Figure()
                     fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Valore Giornaliero', marker_color=colore_base, opacity=0.5))
                     fig.add_hline(
-                        y=media_val, line_dash="dash", line_color="#27ae60", 
-                        annotation_text=f"Media Fissa: {media_val:.2f}", annotation_position="top right"
+                        y=media_val, 
+                        line_dash="dash", 
+                        line_color="#27ae60", 
+                        annotation_text=f"Media Fissa: {media_val:.2f}", 
+                        annotation_position="top right"
                     )
                     fig.update_layout(title=f"{titolo} - Con Linea Media Fissa nell'Intervallo")
                 else:
                     fig = px.bar(
                         df_dat, x=x_col, y=y_col,
-                        title=titolo, labels={y_col: f'kg CO₂e / {unita}', x_col: ''}, text_auto='.2f'
+                        title=titolo,
+                        labels={y_col: f'kg CO₂e / {unita}', x_col: ''},
+                        text_auto='.2f'
                     )
                     fig.update_traces(marker_color=colore_base)
                 
                 fig.update_layout(
-                    height=380, font_family="Inter", 
-                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                    title_font_size=14, title_font_color="#374151"
+                    height=380, 
+                    font_family="Inter", 
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    title_font_size=14,
+                    title_font_color="#374151"
                 )
                 return fig
 
-            # 1. Grafico Totale
+            # Grafico Totale
             df_totale = df_filtrato.groupby('Data')['CO2_Normalizzata'].sum().reset_index()
             fig_tot = genera_figura(df_totale, 'Data', 'CO2_Normalizzata', f"Andamento Complessivo (kg CO₂e / {unita})", "#0B0752")
             st.plotly_chart(fig_tot, use_container_width=True)
-            
-            # 2. Diagramma a Torta (Subito sotto all'istogramma totale)
-            st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            df_pie = df_filtrato.groupby('Parametro')['CO2_Normalizzata'].sum().reset_index()
-            
-            fig_pie = px.pie(
-                df_pie, 
-                values='CO2_Normalizzata', 
-                names='Parametro',
-                title="Incidenza Percentuale delle Categorie sulle Emissioni Totali",
-                color='Parametro',
-                color_discrete_map=colori_parametri,
-                hole=0.4
-            )
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#ffffff', width=2)))
-            fig_pie.update_layout(
-                height=450, 
-                font_family="Inter", 
-                showlegend=True, 
-                title_font_size=14, 
-                title_font_color="#374151",
-                plot_bgcolor='rgba(0,0,0,0)', 
-                paper_bgcolor='rgba(0,0,0,0)'
-            )
-            st.plotly_chart(fig_pie, use_container_width=True)
 
-            # Pulsanti Download Dati Totali
             col_exp1, col_exp2 = st.columns(2)
             with col_exp1:
                 csv_totale = df_totale.to_csv(index=False).encode('utf-8')
-                st.download_button("Scarica dati totali (CSV)", data=csv_totale, file_name="emissioni_totali.csv", mime="text/csv", key="dl_tot_csv")
+                st.markdown(genera_link_download(csv_totale, "emissioni_totali_giornaliere.csv", "Esporta dati totali (CSV)"), unsafe_allow_html=True)
             with col_exp2:
                 output_xlsx = io.BytesIO()
                 with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer:
                     df_totale.to_excel(writer, index=False, sheet_name='Totale Giornaliero')
-                st.download_button("Scarica dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_tot_xlsx")
+                st.markdown(genera_link_download(output_xlsx.getvalue(), "emissioni_totali_giornaliere.xlsx", "Esporta dati totali (XLSX)"), unsafe_allow_html=True)
 
-            st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
             st.subheader("Disaggregazione per Categoria")
+            
+            colori_parametri = {
+                'Materiali': "#B80D0D", 
+                'Rifiuti': "#078303", 
+                'Trasporti': "#732BB7", 
+                'Energia': "#f6de03",
+                'Acqua': "#53DCFE", 
+                'Macchinari': "#8a929e"
+            }
             
             parametri_presenti = df_filtrato['Parametro'].dropna().unique()
             col_grafici = st.columns(2)
@@ -529,19 +365,21 @@ if 'df_cantiere' in st.session_state:
                 with col_grafici[idx % 2]:
                     st.plotly_chart(fig_cat, use_container_width=True)
                     csv_cat = df_p.to_csv(index=False).encode('utf-8')
-                    st.download_button(f"Scarica dati {param} (CSV)", data=csv_cat, file_name=f"dati_{param.lower()}.csv", mime="text/csv", key=f"dl_{param}")
+                    st.markdown(genera_link_download(csv_cat, f"dati_{param.lower()}.csv", f"Esporta dati {param} (CSV)"), unsafe_allow_html=True)
 
-            # Tabella Dati Completa
+            # Tabella Dati Globale
             st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
-            with st.expander("Esporta / Visualizza matrice dati completa calcolata"):
+            with st.expander("Esporta / Visualizza matrice dati completa"):
                 st.dataframe(df_filtrato.drop(columns=['Data_dt']), use_container_width=True)
                 
                 excel_buffer = io.BytesIO()
                 with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
                     df_filtrato.drop(columns=['Data_dt']).to_excel(writer, index=False, sheet_name='Dettaglio Completo')
-                st.download_button("Scarica dataset completo calcolato (XLSX)", data=excel_buffer.getvalue(), file_name="dataset_completo_lca.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_full_xlsx")
+                st.markdown(genera_link_download(excel_buffer.getvalue(), "dataset_completo_lca.xlsx", "Esporta intero dataset filtrato (XLSX)"), unsafe_allow_html=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"Si è verificato un errore durante l'elaborazione dei dati LCA: {e}")
+        st.error(f"Si è verificato un errore durante l'elaborazione: {e}")
+else:
+    st.info("Caricare un file CSV di progetto per avviare l'elaborazione analitica.")
