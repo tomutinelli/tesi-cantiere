@@ -188,18 +188,18 @@ if df_inventario is None or df_inventario.empty:
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Caricamento Dataset di Progetto")
 
-tab1, tab2 = st.tabs(["✨ Elaborazione Intelligente (IA)", "📂 Caricamento CSV Manuale"])
+tab1, tab2 = st.tabs(["Elaborazione Intelligente (IA)", "Caricamento CSV Manuale"])
 
 with tab1:
     st.markdown("""
     <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
-        <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>📖 Guida Operativa: Procedura per l'Elaborazione con IA</h4>
+        <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Procedura per l'Elaborazione con IA</h4>
         <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
             <li><b>Prepara la documentazione di cantiere:</b> Raccogli i file di progetto (es. computo metrico in PDF/Excel, cronoprogramma o Gantt, e note sui trasporti).</li>
             <li><b>Carica i file nei campi sottostanti:</b> Trascina i documenti nei rispettivi riquadri dedicati. Il computo metrico è obbligatorio.</li>
             <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i>. L'intelligenza artificiale estrarrà le date, i parametri e le quantità grezze.</li>
-            <li><b>Mappatura automatica LCI:</b> Il motore Python interno intercetterà le descrizioni e le assocerà istantaneamente alle voci ufficiali del file <code>LCI.xlsx</code>.</li>
             <li><b>Visualizza i risultati:</b> Controlla l'anteprima della tabella normalizzata, scarica il CSV pulito e analizza i grafici aggiornati.</li>
+            In alternativa, se sei già in possesso del file .csv impopstato correttamente, puoi caricarlo direttamente nella scheda "Caricamento CSV manuale".
         </ol>
     </div>
     """, unsafe_allow_html=True)
