@@ -325,8 +325,8 @@ st.markdown("</div>", unsafe_allow_html=True)
 # =====================================================================
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere']
+    
     # --- BLINDATURA NOMI COLONNE ---
-    # Rinomina automaticamente qualsiasi variazione di maiuscole/minuscole o lingua
     mappa_colonne_finali = {}
     for col in df_cantiere.columns:
         c_low = str(col).strip().lower()
@@ -353,27 +353,10 @@ if 'df_cantiere' in st.session_state:
         )
     
     try:
-        # Verifica finale che le 4 colonne esistano davvero prima dei calcoli
         colonne_obbligatorie = ['Data', 'Parametro', 'Elemento', 'Quantita']
         for col in colonne_obbligatorie:
             if col not in df_cantiere.columns:
-                st.error(f"Manca la colonna obbligatorie '{col}' nel dataset. Colonne attuali: {df_cantiere.columns.tolist()}")
-                st.stop()
-    with st.expander("👀 Visualizza Anteprima Dati Input Classificati"):
-        st.dataframe(df_cantiere, use_container_width=True)
-        csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Scarica Dati Input Normalizzati (CSV)",
-            data=csv_input,
-            file_name="dati_input_cantiere.csv",
-            mime="text/csv",
-            key="dl_input_csv"
-        )
-    
-    try:
-        for col in ['Data', 'Parametro', 'Elemento', 'Quantita']:
-            if col not in df_cantiere.columns:
-                st.error(f"Errore di struttura: La colonna '{col}' risulta assente dal CSV generato.")
+                st.error(f"Manca la colonna obbligatoria '{col}' nel dataset. Colonne attuali: {df_cantiere.columns.tolist()}")
                 st.stop()
         
         df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
@@ -490,12 +473,12 @@ if 'df_cantiere' in st.session_state:
                 )
                 return fig
 
-            # Grafico Totale
+            # 1. Grafico Totale
             df_totale = df_filtrato.groupby('Data')['CO2_Normalizzata'].sum().reset_index()
             fig_tot = genera_figura(df_totale, 'Data', 'CO2_Normalizzata', f"Andamento Complessivo (kg CO₂e / {unita})", "#0B0752")
             st.plotly_chart(fig_tot, use_container_width=True)
             
-            # Diagramma a Torta
+            # 2. Diagramma a Torta (Subito sotto all'istogramma totale)
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
             df_pie = df_filtrato.groupby('Parametro')['CO2_Normalizzata'].sum().reset_index()
             
@@ -520,7 +503,7 @@ if 'df_cantiere' in st.session_state:
             )
             st.plotly_chart(fig_pie, use_container_width=True)
 
-            # Pulsanti Download
+            # Pulsanti Download Dati Totali
             col_exp1, col_exp2 = st.columns(2)
             with col_exp1:
                 csv_totale = df_totale.to_csv(index=False).encode('utf-8')
