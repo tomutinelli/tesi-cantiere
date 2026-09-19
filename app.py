@@ -186,7 +186,7 @@ st.subheader("Caricamento Dataset di Progetto")
 tab1, tab2 = st.tabs(["✨ Elaborazione Intelligente (IA)", "📂 Caricamento CSV Manuale"])
 
 with tab1:
-    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel). L'IA estrarrà i dati, mapperà i materiali e calcolerà i trasporti automaticamente.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Carica i tuoi elaborati (PDF, TXT, Excel). L'IA estrarrà i dati, mapperà i materiali e calcolerà i trasporti automaticamente basandosi TASSATIVAMENTE sulle voci del file LCI.</p>", unsafe_allow_html=True)
     
     file_computo = st.file_uploader("Computo Metrico (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_comp")
     file_cronoprogramma = st.file_uploader("Cronoprogramma / Gantt (PDF, TXT, Excel o CSV)", type=['pdf', 'txt', 'xlsx', 'csv'], key="ia_crono")
@@ -201,7 +201,7 @@ with tab1:
         else:
             try:
                 client = genai.Client(api_key=api_key)
-                with st.spinner("L'intelligenza artificiale sta analizzando gli elaborati..."):
+                with st.spinner("L'intelligenza artificiale sta analizzando gli elaborati e associando i materiali..."):
                     contents = []
                     
                     for file_obj in [file_computo, file_cronoprogramma, file_trasporti]:
@@ -220,26 +220,32 @@ with tab1:
                                 types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
                             )
                     
-                    # --- FIX PROMPT CON VOCI DEL DATABASE ---
-                    elementi_validi = df_inventario['Elemento'].unique().tolist()
-                    lista_elementi_str = ", ".join([str(e) for e in elementi_validi])
+                    # --- CREAZIONE DINAMICA DEL VOCABOLARIO IA ---
+                    # L'IA riceverà una lista esatta divisa per Parametro per non commettere errori
+                    vocabolario_ia = ""
+                    for param in df_inventario['Parametro'].unique():
+                        voci_valide = df_inventario[df_inventario['Parametro'] == param]['Elemento'].astype(str).unique().tolist()
+                        voci_str = ", ".join([f"'{v.strip()}'" for v in voci_valide])
+                        vocabolario_ia += f"  - Se 'Parametro' è {param}, scegli tra: [{voci_str}]\n"
                     
                     prompt_sistema = f"""
                     Sei un esperto ingegnere edile e analista LCA. 
-                    Il tuo compito è analizzare i documenti di progetto forniti in input (computi, cronoprogrammi, note trasporti) e generarne un'unica tabella CSV pulita.
+                    Il tuo compito è analizzare i documenti di progetto forniti e generarne un'unica tabella CSV pulita.
                     
                     Il CSV finale DEVE avere esattamente queste 4 intestazioni di colonna:
                     Data,Parametro,Elemento,Quantita
                     
                     Regole ferree:
                     1. 'Data': Formato AAAA-MM-GG. Se c'è un cronoprogramma, distribuisci le quantità nelle date corrette.
-                    2. 'Parametro': Scegli tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
-                    3. 'Elemento': DEVI TASSATIVAMENTE usare SOLO uno dei seguenti nomi esatti presenti nel database: 
-                    [{lista_elementi_str}]. 
-                    Non inventare nomi nuovi. Leggi la descrizione nel computo e scegli il nome dalla lista qui sopra che corrisponde meglio semanticamente.
-                    4. 'Quantita': Valore numerico (per trasporti: massa in tonnellate x km).
+                    2. 'Parametro': Scegli ESCLUSIVAMENTE tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
+                    3. 'Elemento': DEVI AGIRE COME UN CLASSIFICATORE INFLESSIBILE. Leggi la descrizione complessa della voce (es. "Calcestruzzo strutturale Rck 30", "Acciaio B450C", "Tubi fognari") e TRADUCILA in base al parametro usando SOLO una voce dal seguente elenco:
                     
-                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, pronto per pd.read_csv().
+{vocabolario_ia}
+                    
+                    E' ASSOLUTAMENTE VIETATO usare i nomi originali presenti nel computo. Devi identificare il materiale più simile a livello semantico e usare il termine esatto contenuto tra le parentesi quadre.
+                    4. 'Quantita': Valore numerico (per trasporti: massa calcolata in tonnellate moltiplicata per i km indicati).
+                    
+                    Restituisci ESCLUSIVAMENTE il codice CSV grezzo, senza blocchi Markdown, pronto per pd.read_csv().
                     """
                     contents.append(prompt_sistema)
                     
@@ -253,10 +259,12 @@ with tab1:
                         csv_testo = csv_testo.split("```")[1]
                         if csv_testo.startswith("csv"):
                             csv_testo = csv_testo[3:].strip()
+                        elif csv_testo.startswith("\n"):
+                            csv_testo = csv_testo.strip()
                     
                     df_cantiere = pd.read_csv(io.StringIO(csv_testo))
                     st.session_state['df_cantiere'] = df_cantiere
-                    st.success("Documenti elaborati e normalizzati con successo dall'IA!")
+                    st.success("Documenti elaborati, normalizzati e classificati con successo dall'IA!")
             except Exception as e:
                 st.error(f"Errore durante l'elaborazione con l'IA: {e}")
 
@@ -274,13 +282,12 @@ with tab2:
 st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================================
-# ELABORAZIONE E GRAFICI (Si attiva solo se i dati sono caricati)
+# ELABORAZIONE E GRAFICI
 # =====================================================================
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere']
     
-    # --- VISUALIZZAZIONE ANTEPRIMA DATI ---
-    with st.expander("👀 Visualizza Anteprima Dati Input (Utile per verifica IA)"):
+    with st.expander("👀 Visualizza Anteprima Dati Input Classificati"):
         st.dataframe(df_cantiere, use_container_width=True)
         csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -295,12 +302,31 @@ if 'df_cantiere' in st.session_state:
         # Validazione Colonne
         for col in ['Data', 'Parametro', 'Elemento', 'Quantita']:
             if col not in df_cantiere.columns:
-                st.error(f"Errore di struttura: La colonna '{col}' risulta assente.")
+                st.error(f"Errore di struttura: La colonna '{col}' risulta assente dal CSV generato.")
                 st.stop()
         
         df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
-        df_completo = pd.merge(df_cantiere, df_inventario, on=['Parametro', 'Elemento'], how='left')
         
+        # --- NORMALIZZAZIONE TESTI PER IL MERGE ---
+        # Togliamo spazi invisibili e convertiamo tutto in minuscolo
+        df_cantiere['Elemento_match'] = df_cantiere['Elemento'].astype(str).str.strip().str.lower()
+        df_cantiere['Parametro_match'] = df_cantiere['Parametro'].astype(str).str.strip().str.lower()
+        
+        df_inventario['Elemento_match'] = df_inventario['Elemento'].astype(str).str.strip().str.lower()
+        df_inventario['Parametro_match'] = df_inventario['Parametro'].astype(str).str.strip().str.lower()
+        
+        # Merge robusto
+        df_completo = pd.merge(
+            df_cantiere, 
+            df_inventario, 
+            on=['Parametro_match', 'Elemento_match'], 
+            how='left'
+        )
+        
+        # Rimuoviamo le colonne di supporto match usate per l'incrocio
+        df_completo = df_completo.drop(columns=['Parametro_match', 'Elemento_match'])
+        
+        # Controllo elementi non abbinati
         mancanti = df_completo[df_completo['Fattore_Emissione'].isnull()]
         if not mancanti.empty:
             st.warning(f"Attenzione: Elementi non riconosciuti nel database LCI e calcolati a zero: {mancanti['Elemento'].unique().tolist()}")
@@ -340,12 +366,10 @@ if 'df_cantiere' in st.session_state:
         # --- VISUALIZZAZIONE GRAFICI ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
         
-        # LINK WIX FULLSCREEN
         col_title, col_link = st.columns([2, 1])
         with col_title:
             st.subheader("Risultati Analitici")
         with col_link:
-            # Ricorda di inserire qui il tuo link reale di Streamlit per l'esportazione su Wix
             link_app = "https://INSERISCI-QUI-IL-TUO-LINK.streamlit.app" 
             st.link_button("Apri a schermo intero per esportare", link_app)
             
@@ -399,12 +423,12 @@ if 'df_cantiere' in st.session_state:
                 )
                 return fig
 
-            # 1. Grafico Totale
+            # Grafico Totale
             df_totale = df_filtrato.groupby('Data')['CO2_Normalizzata'].sum().reset_index()
             fig_tot = genera_figura(df_totale, 'Data', 'CO2_Normalizzata', f"Andamento Complessivo (kg CO₂e / {unita})", "#0B0752")
             st.plotly_chart(fig_tot, use_container_width=True)
             
-            # 2. Diagramma a Torta (Incidenza Percentuale)
+            # Diagramma a Torta
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
             df_pie = df_filtrato.groupby('Parametro')['CO2_Normalizzata'].sum().reset_index()
             
@@ -415,7 +439,7 @@ if 'df_cantiere' in st.session_state:
                 title="Incidenza Percentuale delle Categorie sulle Emissioni Totali",
                 color='Parametro',
                 color_discrete_map=colori_parametri,
-                hole=0.4 # Grafico ad anello (Donut chart)
+                hole=0.4
             )
             fig_pie.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#ffffff', width=2)))
             fig_pie.update_layout(
@@ -429,7 +453,7 @@ if 'df_cantiere' in st.session_state:
             )
             st.plotly_chart(fig_pie, use_container_width=True)
 
-            # Pulsanti Download Dati Totali
+            # Pulsanti Download
             col_exp1, col_exp2 = st.columns(2)
             with col_exp1:
                 csv_totale = df_totale.to_csv(index=False).encode('utf-8')
@@ -457,7 +481,7 @@ if 'df_cantiere' in st.session_state:
                     csv_cat = df_p.to_csv(index=False).encode('utf-8')
                     st.download_button(f"Scarica dati {param} (CSV)", data=csv_cat, file_name=f"dati_{param.lower()}.csv", mime="text/csv", key=f"dl_{param}")
 
-            # Tabella Dati Globale
+            # Tabella Dati
             st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
             with st.expander("Esporta / Visualizza matrice dati completa calcolata"):
                 st.dataframe(df_filtrato.drop(columns=['Data_dt']), use_container_width=True)
