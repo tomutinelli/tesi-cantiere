@@ -184,14 +184,14 @@ tab1, tab2 = st.tabs(["Elaborazione Intelligente (IA)", "Caricamento CSV Manuale
 with tab1:
     st.markdown("""
     <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
-        <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Unificazione e Conversione Unità di Misura</h4>
-        <p style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 10px;'>
-        Carica contemporaneamente tutti i file di cantiere (Computo Metrico, Cronoprogramma e Trasporti) nell'unica barra sottostante. L'intelligenza artificiale analizzerà congiuntamente i documenti.
-        </p>
-        <ul style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
-            <li><b>Unità di Misura LCI:</b> Poiché il database LCI richiede le quantità in kg (o unità coerenti), l'IA converte automaticamente le unità diverse (es. convertendo metri cubi di calcestruzzo $m^3$ in chilogrammi $kg$ sfruttando la densità tipica, es. $2400\\ kg/m^3$).</li>
-            <li><b>Anteprima e Download:</b> Dopo l'elaborazione potrai visionare la tabella estratta in anteprima e scaricare il file CSV normalizzato.</li>
-        </ul>
+        <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Procedura per l'Elaborazione con IA</h4>
+        <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
+            <li><b>Prepara la documentazione di cantiere:</b> Raccogli i file di progetto (es. computo metrico, cronoprogramma e log dei trasporti).</li>
+            <li><b>Carica i file nella barra unica:</b> Trascina contemporaneamente tutti i documenti nel riquadro sottostante. L'IA provvederà anche a convertire automaticamente le unità di misura (es. $m^3$ di cls in kg tramite densità) per adeguarle agli standard LCI.</li>
+            <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i> per estrarre e unificare i dati.</li>
+            <li><b>Visualizza i risultati:</b> Controlla l'anteprima della tabella normalizzata, scarica il CSV pulito e analizza i grafici aggiornati.</li>
+            <li><i>Se si possiede già il file CSV impostato correttamente, lo si inserisca direttamente nella scheda apposita "Caricamento CSV Manuale".</i></li>
+        </ol>
     </div>
     """, unsafe_allow_html=True)
     
