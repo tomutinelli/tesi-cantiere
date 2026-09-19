@@ -75,14 +75,6 @@ st.markdown("""
         background-color: #f4f7f3 !important;
         color: #111827 !important;
     }
-
-    [data-testid="stDownloadButton"] button:focus:not(:active), 
-    [data-testid="stLinkButton"] button:focus:not(:active),
-    [data-testid="baseButton-secondary"]:focus:not(:active) {
-        border-color: #a7b89f !important;
-        box-shadow: 0 0 0 1px #a7b89f !important;
-        color: #374151 !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -228,8 +220,7 @@ with tab1:
                                 types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
                             )
                     
-                    # Estraiamo la lista degli elementi validi dal tuo database LCI
-                    # per imporli come vocabolario obbligatorio all'IA
+                    # --- FIX PROMPT CON VOCI DEL DATABASE ---
                     elementi_validi = df_inventario['Elemento'].unique().tolist()
                     lista_elementi_str = ", ".join([str(e) for e in elementi_validi])
                     
@@ -243,9 +234,9 @@ with tab1:
                     Regole ferree:
                     1. 'Data': Formato AAAA-MM-GG. Se c'è un cronoprogramma, distribuisci le quantità nelle date corrette.
                     2. 'Parametro': Scegli tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
-                    3. 'Elemento': DEVI TASSATIVAMENTE usare SOLO uno dei seguenti nomi esatti: 
+                    3. 'Elemento': DEVI TASSATIVAMENTE usare SOLO uno dei seguenti nomi esatti presenti nel database: 
                     [{lista_elementi_str}]. 
-                    Non inventare nomi. Leggi la descrizione nel computo e scegli il nome dalla lista qui sopra che corrisponde meglio semanticamente.
+                    Non inventare nomi nuovi. Leggi la descrizione nel computo e scegli il nome dalla lista qui sopra che corrisponde meglio semanticamente.
                     4. 'Quantita': Valore numerico (per trasporti: massa in tonnellate x km).
                     
                     Restituisci ESCLUSIVAMENTE il codice CSV grezzo, pronto per pd.read_csv().
@@ -293,7 +284,7 @@ if 'df_cantiere' in st.session_state:
         st.dataframe(df_cantiere, use_container_width=True)
         csv_input = df_cantiere.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Scarica Dati Input (CSV)",
+            label="📥 Scarica Dati Input Normalizzati (CSV)",
             data=csv_input,
             file_name="dati_input_cantiere.csv",
             mime="text/csv",
@@ -354,6 +345,7 @@ if 'df_cantiere' in st.session_state:
         with col_title:
             st.subheader("Risultati Analitici")
         with col_link:
+            # Ricorda di inserire qui il tuo link reale di Streamlit per l'esportazione su Wix
             link_app = "https://INSERISCI-QUI-IL-TUO-LINK.streamlit.app" 
             st.link_button("Apri a schermo intero per esportare", link_app)
             
@@ -423,7 +415,7 @@ if 'df_cantiere' in st.session_state:
                 title="Incidenza Percentuale delle Categorie sulle Emissioni Totali",
                 color='Parametro',
                 color_discrete_map=colori_parametri,
-                hole=0.4 # Grafico ad anello (Donut chart) per un look più moderno
+                hole=0.4 # Grafico ad anello (Donut chart)
             )
             fig_pie.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#ffffff', width=2)))
             fig_pie.update_layout(
@@ -456,7 +448,7 @@ if 'df_cantiere' in st.session_state:
             
             for idx, param in enumerate(parametri_presenti):
                 df_p = df_filtrato[df_filtrato['Parametro'] == param].groupby('Data')['CO2_Normalizzata'].sum().reset_index()
-                colore_cat = colori_parametri.get(param, '#4b5563') # Colore di default se non mappato
+                colore_cat = colori_parametri.get(param, '#4b5563')
                 
                 fig_cat = genera_figura(df_p, 'Data', 'CO2_Normalizzata', f"{param}", colore_cat)
                 
