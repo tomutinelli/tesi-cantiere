@@ -187,7 +187,7 @@ with tab1:
         <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Procedura per l'Elaborazione con IA</h4>
         <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
             <li><b>Prepara la documentazione di cantiere:</b> Raccogli i file di progetto (es. computo metrico, cronoprogramma e log dei trasporti).</li>
-            <li><b>Carica i file nella barra unica:</b> Trascina contemporaneamente tutti i documenti nel riquadro sottostante. L'IA provvederà anche a convertire automaticamente le unità di misura (es. $m^3$ di cls in kg tramite densità) per adeguarle agli standard LCI.</li>
+            <li><b>Carica i file nella barra unica:</b> Trascina contemporaneamente tutti i documenti nel riquadro sottostante. L'IA provvederà anche a convertire automaticamente le unità di misura (es. m³ di cls in kg tramite densità) per adeguarle agli standard LCI.</li>
             <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i> per estrarre e unificare i dati.</li>
             <li><b>Visualizza i risultati:</b> Controlla l'anteprima della tabella normalizzata, scarica il CSV pulito e analizza i grafici aggiornati.</li>
             In alternativa, se si possiede già il file CSV impostato correttamente, lo si inserisca direttamente nella scheda apposita "Caricamento CSV Manuale".
@@ -229,7 +229,7 @@ with tab1:
                         )
                     
                     prompt_sistema = """
-                    Sei un ingegnere edile e analista LCA. Analizza congiuntamente TUTTI i documenti forniti (computo metrico, cronoprogramma, trasporti).
+                    Sei un ingegnere edile e analista LCA. Analizza congiuntamente TUTTI i documenti forniti (computo metrico, cronoprogramma, trasporti). Leggi attentamente il contenuto dei file e cerca di far combaciare le quantità contenute nel computo con la relativa durata per capire quanto materiale è stato usato quel giorno preciso. Attenzione alle attività che si fanno a distanza di tempo che contengono lo stesso materiale!
                     Restituisci un'unica tabella CSV pulita con queste esatte 4 intestazioni di colonna:
                     Data,Parametro,Elemento,Quantita
                     
