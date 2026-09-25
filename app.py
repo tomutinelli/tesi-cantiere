@@ -86,15 +86,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNZIONE DOWNLOAD BASE64 CON TARGET TOP ---
-def genera_link_download(data_bytes, filename, button_text):
-    b64 = base64.b64encode(data_bytes).decode()
-    mime = "text/csv" if filename.endswith('.csv') else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    return f'<a class="custom-dl-btn" href="data:{mime};base64,{b64}" download="{filename}" target="_top">{button_text}</a>'
+# --- BLOCCO CONFIGURAZIONE GLOBALE & RESET ---
+col_head1, col_head2 = st.columns([3, 1])
+with col_head1:
+    st.title("EcoSite Tracker")
+with col_head2:
+    st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+    # Pulsante per resettare il session_state senza riavviare la pagina
+    if st.button("🔄 Svuota memoria e nuova analisi"):
+        if 'df_cantiere' in st.session_state:
+            del st.session_state['df_cantiere']
+        st.rerun()
 
-st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-
-# --- BLOCCO CONFIGURAZIONE ---
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Configurazione dell'Unità Funzionale")
 st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Definisci i parametri di normalizzazione globale per l'opera.</p>", unsafe_allow_html=True)
@@ -186,10 +189,9 @@ with tab1:
     <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
         <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Procedura per l'Elaborazione con IA</h4>
         <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
-            <li><b>Prepara la documentazione di cantiere:</b> Raccogli i file di progetto (es. computo metrico, cronoprogramma e log dei trasporti).</li>
-            <li><b>Carica i file nella barra unica:</b> Trascina contemporaneamente tutti i documenti nel riquadro sottostante. L'IA provvederà anche a convertire automaticamente le unità di misura per adeguarle agli standard LCI.</li>
-            <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i> per estrarre e unificare i dati.</li>
-            <li><b>Visualizza i risultati:</b> Controlla l'anteprima della tabella normalizzata, scarica il CSV pulito e analizza i grafici aggiornati.</li>
+            <li><b>Prepara la documentazione:</b> Raccogli i file di progetto (computo, cronoprogramma, log trasporti).</li>
+            <li><b>Carica i file:</b> Trascinali nel riquadro sottostante. Puoi rimuoverli e cambiarli in qualsiasi momento.</li>
+            <li><b>Avvia l'analisi:</b> Clicca su <i>"Elabora e Normalizza con IA"</i> quante volte vuoi per rigenerare i dati.</li>
         </ol>
     </div>
     """, unsafe_allow_html=True)
@@ -227,7 +229,6 @@ with tab1:
                             types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
                         )
                     
-                    # PROMPT AGGIORNATO PER GENERALIZZAZIONE MATCHING
                     prompt_sistema = """
                     Sei un ingegnere edile e analista LCA. Analizza congiuntamente TUTTI i documenti forniti, in particolare il computo metrico e il cronoprogramma (che può essere in formato XML o testo).
                     
@@ -326,14 +327,14 @@ with tab1:
                     )
                     
                     st.session_state['df_cantiere'] = df_cantiere_grezzo
-                    st.success("Documenti analizzati e mappati con successo tramite individuazione automatica della WBS/Fasi!")
+                    st.success("Documenti analizzati e mappati con successo! I dati sono pronti per l'analisi sottostante.")
             except Exception as e:
                 st.error(f"Errore durante l'elaborazione con l'IA: {e}")
 
     # Anteprima e Download CSV IA
     if 'df_cantiere' in st.session_state:
         st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
-        st.markdown("#### 👁️ Anteprima Dati Elaborati dall'IA")
+        st.markdown("#### 👁️ Anteprima Dati Elaborati")
         st.dataframe(st.session_state['df_cantiere'], use_container_width=True)
         
         csv_esportato = st.session_state['df_cantiere'].to_csv(index=False).encode('utf-8')
@@ -348,8 +349,8 @@ with tab1:
 with tab2:
     st.markdown("""
     <p style='color: #4b5563; font-size: 0.95rem; line-height: 1.6; margin-bottom: 15px;'>
-    Questo strumento calcola l'impronta di carbonio (kg di CO₂e) in fase di progetto incrociando i dati con il database LCI di riferimento. 
-    Il dataset deve essere strutturato in 4 colonne: <code>Data</code> (AAAA-MM-GG), <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code> (con unità già convertite secondo gli standard LCI).
+    Questo strumento calcola l'impronta di carbonio (kg di CO₂e) in fase di progetto. 
+    Il dataset deve essere in formato CSV (colonne: <code>Data</code>, <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code>).
     </p>
     """, unsafe_allow_html=True)
     
@@ -367,7 +368,8 @@ st.markdown("</div>", unsafe_allow_html=True)
 # ELABORAZIONE E ANALISI LCA
 # =====================================================================
 if 'df_cantiere' in st.session_state:
-    df_cantiere = st.session_state['df_cantiere']
+    # IL SEGRETO E' QUI: Usiamo .copy() per non "sporcare" la variabile in session state al ricaricamento della pagina
+    df_cantiere = st.session_state['df_cantiere'].copy()
     
     mappa_colonne_finali = {}
     for col in df_cantiere.columns:
@@ -386,7 +388,7 @@ if 'df_cantiere' in st.session_state:
     try:
         for col in ['Data', 'Parametro', 'Elemento', 'Quantita']:
             if col not in df_cantiere.columns:
-                st.error(f"Errore di struttura: La colonna '{col}' risulta assente.")
+                st.error(f"Errore di struttura: La colonna '{col}' risulta assente. Clicca su 'Svuota memoria e nuova analisi'.")
                 st.stop()
         
         df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
