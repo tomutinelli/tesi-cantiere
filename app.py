@@ -179,6 +179,11 @@ if df_inventario is None or df_inventario.empty:
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Caricamento Dataset di Progetto")
 
+# CALLBACK PER RESETTARE I DATI QUANDO SI CAMBIA/RIMUOVE UN FILE
+def reset_dati():
+    if 'df_cantiere' in st.session_state:
+        del st.session_state['df_cantiere']
+
 tab1, tab2 = st.tabs(["Elaborazione Intelligente (IA)", "Caricamento CSV Manuale"])
 
 with tab1:
@@ -198,7 +203,8 @@ with tab1:
         "Carica tutti i documenti di cantiere insieme (Computo, Cronoprogramma, Trasporti)", 
         type=['pdf', 'txt', 'xlsx', 'csv', 'xml'], 
         accept_multiple_files=True,
-        key="ia_unified"
+        key="ia_unified",
+        on_change=reset_dati  # Aggiunta la callback
     )
 
     if st.button("Elabora e Normalizza con IA", key="btn_ia"):
@@ -213,6 +219,7 @@ with tab1:
                 with st.spinner("L'intelligenza artificiale sta analizzando la struttura logica dei documenti..."):
                     contents = []
                     for file_obj in files_unificati:
+                        file_obj.seek(0) # Assicuriamoci che il cursore sia all'inizio
                         estensione = file_obj.name.split('.')[-1].lower()
                         if estensione == 'pdf':
                             mime = 'application/pdf'
@@ -353,13 +360,16 @@ with tab2:
     </p>
     """, unsafe_allow_html=True)
     
-    file_cantiere = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed", key="csv_manuale")
+    file_cantiere = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed", key="csv_manuale", on_change=reset_dati)
     if file_cantiere:
-        try:
-            st.session_state['df_cantiere'] = pd.read_csv(file_cantiere)
-            st.success("File CSV caricato correttamente!")
-        except Exception as e:
-            st.error(f"Errore nella lettura del file: {e}")
+        # CONTROLLO SE IL FILE È GIÀ STATO CARICATO PER EVITARE CRASH
+        if 'df_cantiere' not in st.session_state:
+            try:
+                file_cantiere.seek(0) # Riporta il cursore all'inizio del file
+                st.session_state['df_cantiere'] = pd.read_csv(file_cantiere)
+                st.success("File CSV caricato correttamente!")
+            except Exception as e:
+                st.error(f"Errore nella lettura del file: {e}")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -367,7 +377,8 @@ st.markdown("</div>", unsafe_allow_html=True)
 # ELABORAZIONE E ANALISI LCA
 # =====================================================================
 if 'df_cantiere' in st.session_state:
-    df_cantiere = st.session_state['df_cantiere']
+    # USO DEL .copy() PER EVITARE CHE LE MODIFICHE CORROMPANO LO STATO IN MEMORIA
+    df_cantiere = st.session_state['df_cantiere'].copy()
     
     mappa_colonne_finali = {}
     for col in df_cantiere.columns:
