@@ -354,10 +354,16 @@ with tab1:
 
 with tab2:
     st.markdown("""
-    <p style='color: #4b5563; font-size: 0.95rem; line-height: 1.6; margin-bottom: 15px;'>
-    Questo strumento calcola l'impronta di carbonio (kg di CO₂e) in fase di progetto incrociando i dati con il database LCI di riferimento. 
-    Il dataset deve essere strutturato in 4 colonne: <code>Data</code> (AAAA-MM-GG), <code>Parametro</code>, <code>Elemento</code> e <code>Quantita</code> (con unità già convertite secondo gli standard LCI).
-    </p>
+    <div style='color: #4b5563; font-size: 0.95rem; line-height: 1.6; margin-bottom: 15px;'>
+        Questo strumento calcola l'impronta di carbonio (espressa in kg di CO₂ equivalente) in fase di progettazione, incrociando le quantità inserite con i fattori di emissione del database LCI. 
+        Affinché l'analisi manuale vada a buon fine, il file CSV deve essere rigorosamente strutturato in 4 colonne denominate esattamente in questo modo:
+        <ul style='margin-top: 8px; margin-bottom: 10px; padding-left: 20px;'>
+            <li><code>Data</code>: Giorno della lavorazione o del consumo, nel formato standard <b>AAAA-MM-GG</b> (es. 2026-10-15).</li>
+            <li><code>Parametro</code>: Macro-categoria di impatto. Deve essere scelta <b>tassativamente</b> tra queste sei opzioni esatte: <i>Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari</i>.</li>
+            <li><code>Elemento</code>: La descrizione specifica della voce (es. "Calcestruzzo", "Acciaio", "Diesel"). Più il nome si avvicina alle nomenclature del database LCI, più accurato sarà il riconoscimento automatico.</li>
+            <li><code>Quantita</code>: Valore numerico del consumo. <b>Attenzione:</b> le quantità devono essere già convertite nell'unità di misura standard del database (es. i metri cubi di calcestruzzo devono essere inseriti in kg moltiplicandoli per la densità, l'elettricità in kWh).</li>
+        </ul>
+    </div>
     """, unsafe_allow_html=True)
     
     file_cantiere = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed", key="csv_manuale", on_change=reset_dati)
