@@ -363,7 +363,7 @@ with tab2:
             <li><code>Data</code>: Giorno della lavorazione o del consumo, nel formato standard <b>AAAA-MM-GG</b> (es. 2026-10-15).</li>
             <li><code>Parametro</code>: Macro-categoria di impatto. Deve essere scelta <b>tassativamente</b> tra queste sei opzioni esatte: <i>Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari</i>.</li>
             <li><code>Elemento</code>: La descrizione specifica della voce (es. "Calcestruzzo", "Acciaio", "Diesel"). Più il nome si avvicina alle nomenclature del database LCI, più accurato sarà il riconoscimento automatico.</li>
-            <li><code>Quantita</code>: Valore numerico del consumo. <b>Attenzione:</b> le quantità devono essere già convertite nell'unità di misura standard del database (es. i metri cubi di calcestruzzo devono essere inseriti in kg moltiplicandoli per la densità, l'elettricità in kWh).</li>
+            <li><code>Quantità</code>: Valore numerico del consumo. <b>Attenzione:</b> le quantità devono essere già convertite nell'unità di misura standard del database (es. i metri cubi di calcestruzzo devono essere inseriti in kg moltiplicandoli per la densità, l'elettricità in kWh).</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
