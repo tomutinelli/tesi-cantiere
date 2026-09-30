@@ -354,7 +354,9 @@ with tab1:
 
 with tab2:
     st.markdown("""
-    <div style='color: #4b5563; font-size: 0.95rem; line-height: 1.6; margin-bottom: 15px;'>
+    <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
+        <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Procedura per l'Elaborazione con file .CSV</h4>
+        <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
         Questo strumento calcola l'impronta di carbonio (espressa in kg di CO₂ equivalente) in fase di progettazione, incrociando le quantità inserite con i fattori di emissione del database LCI. 
         Affinché l'analisi manuale vada a buon fine, il file CSV deve essere rigorosamente strutturato in 4 colonne denominate esattamente in questo modo:
         <ul style='margin-top: 8px; margin-bottom: 10px; padding-left: 20px;'>
