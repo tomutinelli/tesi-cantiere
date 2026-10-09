@@ -94,31 +94,6 @@ def genera_link_download(data_bytes, filename, button_text):
 
 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
-# --- BLOCCO CONFIGURAZIONE ---
-st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-st.subheader("Configurazione dell'Unità Funzionale")
-st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 20px;'>Definisci i parametri di normalizzazione globale per l'opera.</p>", unsafe_allow_html=True)
-
-tipo_cantiere = st.radio(
-    "Tipologia di modellazione spaziale",
-    options=[
-        "Cantiere Lineare (normalizzazione per metro lineare - m)", 
-        "Cantiere Standard (normalizzazione per metro quadro - m²)"
-    ],
-    label_visibility="collapsed"
-)
-
-st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-col_cfg1, col_cfg2 = st.columns([2, 1])
-with col_cfg1:
-    if "Lineare" in tipo_cantiere:
-        unita = "m"
-        dimensione_cantiere = st.number_input("Estensione longitudinale complessiva (metri)", min_value=0.1, value=100.0, step=1.0)
-    else:
-        unita = "m²"
-        dimensione_cantiere = st.number_input("Area di cantiere complessiva (metri quadri)", min_value=0.1, value=100.0, step=1.0)
-st.markdown("</div>", unsafe_allow_html=True)
-
 # --- LETTURA DATABASE LCI ---
 @st.cache_data
 def carica_database_lci(percorso_file):
@@ -175,6 +150,44 @@ if df_inventario is None or df_inventario.empty:
     st.error(f"Errore critico: Il database '{percorso_lci}' non è reperibile o non è valido sul server.")
     st.stop()
 
+# --- FUNZIONE GLOBALE DI MAPPING ---
+def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
+    p_str = str(parametro).strip()
+    e_str = str(elemento_grezzo).strip().lower()
+    
+    voci_disponibili = df_inv[df_inv['Parametro'].str.lower() == p_str.lower()]['Elemento'].tolist()
+    if not voci_disponibili:
+        voci_disponibili = df_inv['Elemento'].tolist()
+        
+    for v in voci_disponibili:
+        if v.lower() in e_str or e_str in v.lower():
+            return v
+            
+    if p_str.lower() == 'materiali':
+        if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
+        if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
+        if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
+        if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str: return 'Inerti'
+        if 'asfalto' in e_str or 'bitume' in e_str: return 'Asfalto/Bitume'
+        if 'legno' in e_str: return 'Legno'
+        if 'vetro' in e_str: return 'Vetro'
+        if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
+    elif p_str.lower() == 'rifiuti':
+        if 'scavo' in e_str or 'terra' in e_str: return 'Inerti / Macerie di demolizione'
+        if 'calcestruzzo' in e_str: return 'Calcestruzzo di risulta'
+        if 'acciaio' in e_str or 'ferro' in e_str: return 'Metallo / Acciaio di scarto'
+        if 'legno' in e_str: return 'Legno da cantiere'
+    elif p_str.lower() in ['trasporti', 'macchinari']:
+        if 'diesel' in e_str or 'gasolio' in e_str: return 'Diesel'
+        if 'benzina' in e_str or 'petrol' in e_str: return 'Petrol'
+        
+    match = get_close_matches(str(elemento_grezzo), voci_disponibili, n=1, cutoff=0.1)
+    if match:
+        return match[0]
+        
+    return elemento_grezzo
+
+
 # --- BLOCCO INPUT DATI (IA vs CSV MANUALE) ---
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Caricamento Dataset di Progetto")
@@ -191,20 +204,19 @@ with tab1:
     <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
         <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Procedura per l'Elaborazione con IA</h4>
         <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
-            <li><b>Prepara la documentazione di cantiere:</b> Raccogli i file di progetto (es. computo metrico, cronoprogramma e log dei trasporti).</li>
-            <li><b>Carica i file nella barra unica:</b> Trascina contemporaneamente tutti i documenti nel riquadro sottostante. L'IA provvederà anche a convertire automaticamente le unità di misura per adeguarle agli standard LCI.</li>
-            <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i> per estrarre e unificare i dati.</li>
-            <li><b>Visualizza i risultati:</b> Controlla l'anteprima della tabella normalizzata, scarica il CSV pulito e analizza i grafici aggiornati.</li>
+            <li><b>Prepara la documentazione di cantiere:</b> Raccogli i file (es. esportazioni IFC, abachi da Revit, cronoprogramma).</li>
+            <li><b>Carica i file nella barra unica:</b> Trascina contemporaneamente tutti i documenti nel riquadro.</li>
+            <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i> per estrarre e unificare i dati temporali, dei materiali e dei macchinari.</li>
         </ol>
     </div>
     """, unsafe_allow_html=True)
     
     files_unificati = st.file_uploader(
-        "Carica tutti i documenti di cantiere insieme (Computo, Cronoprogramma, Trasporti)", 
-        type=['pdf', 'txt', 'xlsx', 'csv', 'xml'], 
+        "Carica tutti i documenti di cantiere (IFC, Cronoprogramma, Abachi Materiali)", 
+        type=['pdf', 'txt', 'xlsx', 'csv', 'xml', 'ifc'], 
         accept_multiple_files=True,
         key="ia_unified",
-        on_change=reset_dati  # Aggiunta la callback
+        on_change=reset_dati
     )
 
     if st.button("Elabora e Normalizza con IA", key="btn_ia"):
@@ -219,13 +231,13 @@ with tab1:
                 with st.spinner("L'intelligenza artificiale sta analizzando la struttura logica dei documenti..."):
                     contents = []
                     for file_obj in files_unificati:
-                        file_obj.seek(0) # Assicuriamoci che il cursore sia all'inizio
+                        file_obj.seek(0)
                         estensione = file_obj.name.split('.')[-1].lower()
                         if estensione == 'pdf':
                             mime = 'application/pdf'
                         elif estensione == 'xlsx':
                             mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                        elif estensione in ['csv', 'xml', 'txt']:
+                        elif estensione in ['csv', 'xml', 'txt', 'ifc']:
                             mime = 'text/plain'
                         else:
                             mime = 'application/octet-stream'
@@ -234,21 +246,21 @@ with tab1:
                             types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime)
                         )
                     
-                    # PROMPT AGGIORNATO PER GENERALIZZAZIONE MATCHING
                     prompt_sistema = """
-                    Sei un ingegnere edile e analista LCA. Analizza congiuntamente TUTTI i documenti forniti, in particolare il computo metrico e il cronoprogramma (che può essere in formato XML o testo).
+                    Sei un ingegnere edile e analista LCA. Analizza congiuntamente TUTTI i documenti forniti (cronoprogramma e computi/abachi/IFC).
                     
-                    CRITERIO FONDAMENTALE DI MATCHING:
-                    Il computo metrico e il cronoprogramma forniti condividono una struttura logica di suddivisione (ad esempio tramite codici WBS, identificativi numerici, nomi delle macro-fasi o categorie di lavorazione). 
-                    Il tuo primo compito è individuare autonomamente questa chiave di classificazione comune. Successivamente, sfrutta questa corrispondenza per mappare in modo esatto le singole lavorazioni e le relative quantità (dal Computo) al periodo temporale corretto (dal Cronoprogramma).
+                    REGOLE FONDAMENTALI:
+                    1. File IFC / Abachi Materiali Revit: Identifica i materiali esportati. La quantità (in kg) si trova specificamente nella colonna "Massa". 
+                    2. Cronoprogramma: Utilizza il cronoprogramma per spalmare temporalmente (in parti uguali) la massa totale dei materiali lungo i giorni previsti per la specifica fase o lavorazione.
+                    3. Macchinari: Estrai i macchinari che compaiono nella "lista lavorazioni" (spesso indicati nelle colonne in giallo dei documenti/tabelle forniti) e collocalili nelle date corrette del cronoprogramma.
                     
                     Restituisci un'unica tabella CSV pulita con queste esatte 4 intestazioni di colonna:
                     Data,Parametro,Elemento,Quantita
                     
-                    - Data: Formato AAAA-MM-GG. Spalma e distribuisci in parti uguali la quantità totale di una voce di computo lungo tutti i giorni lavorativi previsti nel cronoprogramma per la sua specifica fase/WBS.
+                    - Data: Formato AAAA-MM-GG.
                     - Parametro: Scegli tassativamente tra: Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari.
                     - Elemento: Descrizione standardizzata dell'elemento o materiale.
-                    - Quantita: Valore numerico della singola riga convertito nell'unità di misura coerente con il database LCI (es. converti i metri cubi di calcestruzzo in kg moltiplicando per la densità di 2400 kg/m3; converti tonnellate di acciaio in kg moltiplicando per 1000). 
+                    - Quantita: Valore numerico della singola riga per quel giorno.
                     
                     Non inserire commenti o spiegazioni. Restituisci ESCLUSIVAMENTE il codice CSV grezzo, senza blocchi Markdown, pronto per pd.read_csv().
                     """
@@ -278,7 +290,7 @@ with tab1:
                             colonne_mappa[c] = 'Parametro'
                         elif 'elem' in c_low or 'material' in c_low or 'voce' in c_low:
                             colonne_mappa[c] = 'Elemento'
-                        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'amount' in c_low:
+                        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'amount' in c_low or 'massa' in c_low:
                             colonne_mappa[c] = 'Quantita'
                     
                     df_cantiere_grezzo.rename(columns=colonne_mappa, inplace=True)
@@ -292,48 +304,12 @@ with tab1:
                     if 'Quantita' not in df_cantiere_grezzo.columns:
                         df_cantiere_grezzo['Quantita'] = 1.0
 
-                    def mappa_voce_a_lci(parametro, elemento_grezzo):
-                        p_str = str(parametro).strip()
-                        e_str = str(elemento_grezzo).strip().lower()
-                        
-                        voci_disponibili = df_inventario[df_inventario['Parametro'].str.lower() == p_str.lower()]['Elemento'].tolist()
-                        if not voci_disponibili:
-                            voci_disponibili = df_inventario['Elemento'].tolist()
-                            
-                        for v in voci_disponibili:
-                            if v.lower() in e_str or e_str in v.lower():
-                                return v
-                                
-                        if p_str.lower() == 'materiali':
-                            if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
-                            if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
-                            if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
-                            if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str: return 'Inerti'
-                            if 'asfalto' in e_str or 'bitume' in e_str: return 'Asfalto/Bitume'
-                            if 'legno' in e_str: return 'Legno'
-                            if 'vetro' in e_str: return 'Vetro'
-                            if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
-                        elif p_str.lower() == 'rifiuti':
-                            if 'scavo' in e_str or 'terra' in e_str: return 'Inerti / Macerie di demolizione'
-                            if 'calcestruzzo' in e_str: return 'Calcestruzzo di risulta'
-                            if 'acciaio' in e_str or 'ferro' in e_str: return 'Metallo / Acciaio di scarto'
-                            if 'legno' in e_str: return 'Legno da cantiere'
-                        elif p_str.lower() in ['trasporti', 'macchinari']:
-                            if 'diesel' in e_str or 'gasolio' in e_str: return 'Diesel'
-                            if 'benzina' in e_str or 'petrol' in e_str: return 'Petrol'
-                            
-                        match = get_close_matches(str(elemento_grezzo), voci_disponibili, n=1, cutoff=0.1)
-                        if match:
-                            return match[0]
-                            
-                        return elemento_grezzo
-
                     df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(
                         lambda row: mappa_voce_a_lci(row['Parametro'], row['Elemento']), axis=1
                     )
                     
                     st.session_state['df_cantiere'] = df_cantiere_grezzo
-                    st.success("Documenti analizzati e mappati con successo tramite individuazione automatica della WBS/Fasi!")
+                    st.success("Documenti analizzati, materiali (Massa) e macchinari estratti con successo!")
             except Exception as e:
                 st.error(f"Errore durante l'elaborazione con l'IA: {e}")
 
@@ -345,9 +321,9 @@ with tab1:
         
         csv_esportato = st.session_state['df_cantiere'].to_csv(index=False).encode('utf-8')
         st.download_button(
-            "📥 Scarica CSV Normalizzato dall'IA", 
+            "📥 Scarica CSV Elaborato dall'IA", 
             data=csv_esportato, 
-            file_name="dataset_cantiere_normalizzato.csv", 
+            file_name="dataset_cantiere_estratti.csv", 
             mime="text/csv",
             key="download_csv_ia"
         )
@@ -357,23 +333,22 @@ with tab2:
     <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
         <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa: Procedura per l'Elaborazione con file .CSV</h4>
         <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
-        Questo strumento calcola l'impronta di carbonio (espressa in kg di CO₂ equivalente) in fase di progettazione, incrociando le quantità inserite con i fattori di emissione del database LCI. 
-        Affinché l'analisi manuale vada a buon fine, il file CSV deve essere rigorosamente strutturato in 4 colonne denominate esattamente in questo modo:
+        Questo strumento calcola l'impronta di carbonio (espresso in kg di CO₂ equivalente). 
+        Il file CSV deve essere strutturato in 4 colonne denominate esattamente:
         <ul style='margin-top: 8px; margin-bottom: 10px; padding-left: 20px;'>
-            <li><code>Data</code>: Giorno della lavorazione o del consumo, nel formato standard <b>AAAA-MM-GG</b> (es. 2026-10-15).</li>
-            <li><code>Parametro</code>: Macro-categoria di impatto. Deve essere scelta <b>tassativamente</b> tra queste sei opzioni esatte: <i>Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari</i>.</li>
-            <li><code>Elemento</code>: La descrizione specifica della voce (es. "Calcestruzzo", "Acciaio", "Diesel"). Più il nome si avvicina alle nomenclature del database LCI, più accurato sarà il riconoscimento automatico.</li>
-            <li><code>Quantità</code>: Valore numerico del consumo. <b>Attenzione:</b> le quantità devono essere già convertite nell'unità di misura standard del database (es. i metri cubi di calcestruzzo devono essere inseriti in kg moltiplicandoli per la densità, l'elettricità in kWh).</li>
+            <li><code>Data</code>: Giorno della lavorazione (AAAA-MM-GG).</li>
+            <li><code>Parametro</code>: Macro-categoria tra: <i>Materiali, Rifiuti, Energia, Acqua, Trasporti, Macchinari</i>.</li>
+            <li><code>Elemento</code>: La descrizione specifica della voce.</li>
+            <li><code>Quantita</code>: Valore numerico del consumo (es. massa in kg per i materiali).</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
     
     file_cantiere = st.file_uploader("Seleziona file CSV", type=['csv'], label_visibility="collapsed", key="csv_manuale", on_change=reset_dati)
     if file_cantiere:
-        # CONTROLLO SE IL FILE È GIÀ STATO CARICATO PER EVITARE CRASH
         if 'df_cantiere' not in st.session_state:
             try:
-                file_cantiere.seek(0) # Riporta il cursore all'inizio del file
+                file_cantiere.seek(0)
                 st.session_state['df_cantiere'] = pd.read_csv(file_cantiere)
                 st.success("File CSV caricato correttamente!")
             except Exception as e:
@@ -385,7 +360,6 @@ st.markdown("</div>", unsafe_allow_html=True)
 # ELABORAZIONE E ANALISI LCA
 # =====================================================================
 if 'df_cantiere' in st.session_state:
-    # USO DEL .copy() PER EVITARE CHE LE MODIFICHE CORROMPANO LO STATO IN MEMORIA
     df_cantiere = st.session_state['df_cantiere'].copy()
     
     mappa_colonne_finali = {}
@@ -397,7 +371,7 @@ if 'df_cantiere' in st.session_state:
             mappa_colonne_finali[col] = 'Parametro'
         elif 'elem' in c_low or 'material' in c_low:
             mappa_colonne_finali[col] = 'Elemento'
-        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low:
+        elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'massa' in c_low:
             mappa_colonne_finali[col] = 'Quantita'
             
     df_cantiere.rename(columns=mappa_colonne_finali, inplace=True)
@@ -407,6 +381,22 @@ if 'df_cantiere' in st.session_state:
             if col not in df_cantiere.columns:
                 st.error(f"Errore di struttura: La colonna '{col}' risulta assente.")
                 st.stop()
+                
+        # -------------------------------------------------------------
+        # CALCOLO AUTOMATICO DELLO SFRIDO (15%)
+        # -------------------------------------------------------------
+        mat_mask = df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'materiali'
+        if mat_mask.any():
+            df_sfrido = df_cantiere[mat_mask].copy()
+            df_sfrido['Parametro'] = 'Rifiuti'
+            # Ipotizza uno sfrido del 15% sulla massa per generare scarti
+            df_sfrido['Quantita'] = df_sfrido['Quantita'] * 0.15 
+            # Riapplica il mapping per assegnare la corretta categoria LCI di rifiuto
+            df_sfrido['Elemento'] = df_sfrido.apply(
+                lambda row: mappa_voce_a_lci(row['Parametro'], row['Elemento']), axis=1
+            )
+            df_cantiere = pd.concat([df_cantiere, df_sfrido], ignore_index=True)
+        # -------------------------------------------------------------
         
         df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
         
@@ -436,8 +426,8 @@ if 'df_cantiere' in st.session_state:
             st.warning(f"Elementi o Parametri non riconosciuti nel database LCI (calcolati a zero): {mancanti['Elemento'].unique().tolist()}")
             df_completo['Fattore_Emissione'] = df_completo['Fattore_Emissione'].fillna(0)
             
+        # CALCOLO EMISSIONI ASSOLUTE (Rossa Normalizzazione)
         df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
-        df_completo['CO2_Normalizzata'] = df_completo['CO2_Totale_kg'] / dimensione_cantiere
         
         # --- FILTRO TEMPORALE ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
@@ -469,8 +459,8 @@ if 'df_cantiere' in st.session_state:
 
         # --- VISUALIZZAZIONE GRAFICI ---
         st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-        st.subheader("Risultati Analitici")
-        st.markdown(f"<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 25px;'>I valori visualizzati esprimono l'incidenza normalizzata rispetto all'unità funzionale complessiva (<b>{dimensione_cantiere} {unita}</b>).</p>", unsafe_allow_html=True)
+        st.subheader("Risultati Analitici (Emissioni Assolute)")
+        st.markdown("<p style='color: #6b7280; font-size: 0.9rem; margin-bottom: 25px;'>I valori visualizzati esprimono le emissioni totali assolute espresse in kg di CO₂ equivalente.</p>", unsafe_allow_html=True)
         
         if df_filtrato.empty:
             st.warning("Nessuna evidenza registrata nell'intervallo temporale selezionato.")
@@ -495,7 +485,7 @@ if 'df_cantiere' in st.session_state:
                     fig = px.histogram(
                         df_dat, x=y_col, nbins=20, marginal="violin",
                         title=f"{titolo} - Distribuzione Frazionale",
-                        labels={y_col: f'kg CO₂e / {unita}', 'count': 'Frequenza'},
+                        labels={y_col: 'kg CO₂e', 'count': 'Frequenza'},
                         color_discrete_sequence=[colore_base]
                     )
                 elif "Media mobile" in modo_visualizzazione or "Media (Andamento" in modo_visualizzazione:
@@ -521,7 +511,7 @@ if 'df_cantiere' in st.session_state:
                     fig = px.bar(
                         df_dat, x=x_col, y=y_col,
                         title=titolo,
-                        labels={y_col: f'kg CO₂e / {unita}', x_col: ''},
+                        labels={y_col: 'kg CO₂e', x_col: ''},
                         text_auto='.2f'
                     )
                     fig.update_traces(marker_color=colore_base)
@@ -537,13 +527,13 @@ if 'df_cantiere' in st.session_state:
                 return fig
 
             # 1. Grafico Totale
-            df_totale = df_filtrato.groupby('Data')['CO2_Normalizzata'].sum().reset_index()
-            fig_tot = genera_figura(df_totale, 'Data', 'CO2_Normalizzata', f"Andamento Complessivo (kg CO₂e / {unita})", "#0B0752")
+            df_totale = df_filtrato.groupby('Data')['CO2_Totale_kg'].sum().reset_index()
+            fig_tot = genera_figura(df_totale, 'Data', 'CO2_Totale_kg', "Andamento Complessivo Emissioni (kg CO₂e)", "#0B0752")
             st.plotly_chart(fig_tot, use_container_width=True)
             
             # 2. Diagramma a Torta (Incidenza Percentuale)
             st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-            df_pie = df_filtrato.groupby('Parametro')['CO2_Normalizzata'].sum().reset_index()
+            df_pie = df_filtrato.groupby('Parametro')['CO2_Totale_kg'].sum().reset_index()
             
             colori_parametri = {
                 'Materiali': "#B80D0D", 
@@ -556,7 +546,7 @@ if 'df_cantiere' in st.session_state:
             
             fig_pie = px.pie(
                 df_pie, 
-                values='CO2_Normalizzata', 
+                values='CO2_Totale_kg', 
                 names='Parametro',
                 title="Incidenza Percentuale delle Categorie sulle Emissioni Totali",
                 color='Parametro',
@@ -592,10 +582,10 @@ if 'df_cantiere' in st.session_state:
             col_grafici = st.columns(2)
             
             for idx, param in enumerate(parametri_presenti):
-                df_p = df_filtrato[df_filtrato['Parametro'] == param].groupby('Data')['CO2_Normalizzata'].sum().reset_index()
+                df_p = df_filtrato[df_filtrato['Parametro'] == param].groupby('Data')['CO2_Totale_kg'].sum().reset_index()
                 colore_cat = colori_parametri.get(param, '#4b5563')
                 
-                fig_cat = genera_figura(df_p, 'Data', 'CO2_Normalizzata', f"{param}", colore_cat)
+                fig_cat = genera_figura(df_p, 'Data', 'CO2_Totale_kg', f"{param}", colore_cat)
                 
                 with col_grafici[idx % 2]:
                     st.plotly_chart(fig_cat, use_container_width=True)
