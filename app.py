@@ -64,12 +64,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNZIONE DOWNLOAD BASE64 CON TARGET TOP ---
-def genera_link_download(data_bytes, filename, button_text):
-    b64 = base64.b64encode(data_bytes).decode()
-    mime = "text/csv" if filename.endswith('.csv') else "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    return f'<a class="custom-dl-btn" href="data:{mime};base64,{b64}" download="{filename}" target="_top">{button_text}</a>'
-
 st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
 # --- LETTURA DATABASE LCI ---
@@ -171,7 +165,7 @@ with tab1:
         <ol style='color: #4b5563; font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; padding-left: 20px;'>
             <li><b>Prepara la documentazione di cantiere:</b> Raccogli i file (es. esportazioni IFC, abachi da Revit, cronoprogramma).</li>
             <li><b>Carica i file nella barra unica:</b> Trascina contemporaneamente tutti i documenti nel riquadro.</li>
-            <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante <i>"Elabora e Normalizza con IA"</i> per estrarre e unificare i dati temporali, dei materiali e dei macchinari.</li>
+            <li><b>Avvia l'analisi semantica:</b> Clicca sul pulsante per generare il database (che includerà in automatico sfridi, trasporti a 30 km e stime di cantiere).</li>
         </ol>
     </div>
     """, unsafe_allow_html=True)
@@ -191,7 +185,7 @@ with tab1:
         else:
             try:
                 client = genai.Client(api_key=api_key)
-                with st.spinner("L'intelligenza artificiale sta analizzando la struttura logica dei documenti..."):
+                with st.spinner("L'intelligenza artificiale sta analizzando la struttura logica e calcolando i fabbisogni..."):
                     contents = []
                     for file_obj in files_unificati:
                         file_obj.seek(0)
@@ -256,8 +250,11 @@ with tab1:
                         
                         df_estratti = df_estratti.dropna(subset=['Data_Inizio', 'Data_Fine'])
                         
-                        righe_distribuite = []
+                        righe_arricchite = []
+                        giorni_unici = set()
+                        
                         for index, row in df_estratti.iterrows():
+                            # Generazione nei giorni lavorativi (Business days)
                             giorni_lavorativi = pd.bdate_range(start=row['Data_Inizio'], end=row['Data_Fine'])
                             num_giorni = len(giorni_lavorativi)
                             
@@ -268,31 +265,71 @@ with tab1:
                             quantita_giorn = row['Quantita_Totale'] / num_giorni
                             
                             for data_curr in giorni_lavorativi:
-                                righe_distribuite.append({
-                                    'Data': data_curr.strftime('%Y-%m-%d'),
+                                data_str = data_curr.strftime('%Y-%m-%d')
+                                giorni_unici.add(data_str)
+                                
+                                # 1. Materiale base
+                                righe_arricchite.append({
+                                    'Data': data_str,
                                     'Parametro': row['Parametro'],
                                     'Elemento': row['Elemento'],
                                     'Quantita': quantita_giorn
                                 })
+                                
+                                # --- CALCOLI DERIVATI ---
+                                if row['Parametro'].strip().lower() == 'materiali':
+                                    # 2. Rifiuti (15% di sfrido da conferire a discarica)
+                                    q_rif = quantita_giorn * 0.15
+                                    righe_arricchite.append({
+                                        'Data': data_str, 
+                                        'Parametro': 'Rifiuti', 
+                                        'Elemento': 'Inerti / Macerie di demolizione', 
+                                        'Quantita': q_rif
+                                    })
+                                    
+                                    # 3. Trasporti (Massa / 28 tonnellate * 30 km * Consumo 0.25 kg_diesel/km)
+                                    # Viaggi per forniture materiali
+                                    q_trasporto_mat = (quantita_giorn / 28000) * 30 * 0.25
+                                    righe_arricchite.append({
+                                        'Data': data_str, 
+                                        'Parametro': 'Trasporti', 
+                                        'Elemento': 'Diesel', 
+                                        'Quantita': q_trasporto_mat
+                                    })
+                                    
+                                    # Viaggi per smaltimento rifiuti
+                                    q_trasporto_rif = (q_rif / 28000) * 30 * 0.25
+                                    righe_arricchite.append({
+                                        'Data': data_str, 
+                                        'Parametro': 'Trasporti', 
+                                        'Elemento': 'Diesel', 
+                                        'Quantita': q_trasporto_rif
+                                    })
 
-                        df_cantiere_grezzo = pd.DataFrame(righe_distribuite)
+                        # 4. Aggiunta Oneri di Cantiere Fissi (Macchinari, Energia, Acqua) per ogni giorno lavorato
+                        for d in giorni_unici:
+                            righe_arricchite.append({'Data': d, 'Parametro': 'Macchinari', 'Elemento': 'Diesel', 'Quantita': 45.0})
+                            righe_arricchite.append({'Data': d, 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': 120.0})
+                            righe_arricchite.append({'Data': d, 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': 500.0})
+
+                        df_cantiere_grezzo = pd.DataFrame(righe_arricchite)
 
                         df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(
                             lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1
                         )
                         
                         st.session_state['df_cantiere'] = df_cantiere_grezzo
-                        st.success("Documenti analizzati, materiali estratti con successo!")
+                        st.success("Analisi completata! Materiali, rifiuti, calcoli di trasporto ed energia generati con successo.")
             except Exception as e:
                 st.error(f"Errore di configurazione dell'elaborazione: {e}")
 
     if 'df_cantiere' in st.session_state:
         st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
-        st.markdown("#### 👁️ Anteprima Dati Elaborati dall'IA")
+        st.markdown("#### 👁️ Anteprima Dati Elaborati")
         st.dataframe(st.session_state['df_cantiere'], use_container_width=True)
         
         csv_esportato = st.session_state['df_cantiere'].to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Scarica CSV Elaborato", data=csv_esportato, file_name="dataset_cantiere_estratti.csv", mime="text/csv")
+        st.download_button("📥 Scarica CSV Completo (Materiali, Rifiuti, Trasporti, Energia)", data=csv_esportato, file_name="dataset_cantiere_completo.csv", mime="text/csv")
 
 with tab2:
     st.markdown("""
@@ -338,17 +375,16 @@ if 'df_cantiere' in st.session_state:
             
     df_cantiere.rename(columns=mappa_colonne_finali, inplace=True)
     
-    # -------------------------------------------------------------
-    # CALCOLO AUTOMATICO DELLO SFRIDO (15%) SUI MATERIALI
-    # -------------------------------------------------------------
-    mat_mask = df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'materiali'
-    if mat_mask.any():
-        df_sfrido = df_cantiere[mat_mask].copy()
-        df_sfrido['Parametro'] = 'Rifiuti'
-        df_sfrido['Quantita'] = df_sfrido['Quantita'] * 0.15 
-        # Modifica richiesta: assegna esplicitamente 'Discarica inerti' invece di rimappare l'elemento originale
-        df_sfrido['Elemento'] = 'Discarica inerti'
-        df_cantiere = pd.concat([df_cantiere, df_sfrido], ignore_index=True)
+    # SALVAGUARDIA: Calcola i rifiuti in automatico SOLO se il file caricato non li contiene già (es. per vecchi CSV caricati manualmente)
+    rifiuti_presenti = (df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'rifiuti').any()
+    if not rifiuti_presenti:
+        mat_mask = df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'materiali'
+        if mat_mask.any():
+            df_sfrido = df_cantiere[mat_mask].copy()
+            df_sfrido['Parametro'] = 'Rifiuti'
+            df_sfrido['Quantita'] = df_sfrido['Quantita'] * 0.15 
+            df_sfrido['Elemento'] = 'Inerti / Macerie di demolizione'
+            df_cantiere = pd.concat([df_cantiere, df_sfrido], ignore_index=True)
     
     df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='%Y-%m-%d', errors='coerce')
     
@@ -374,52 +410,27 @@ if 'df_cantiere' in st.session_state:
     df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
     
     # -------------------------------------------------------------
-    # FILTRO TEMPORALE MIGLIORATO (Mesi/Anni/Giorni)
+    # FILTRO TEMPORALE
     # -------------------------------------------------------------
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
     st.subheader("Filtro Temporale")
+    st.markdown("<p style='font-size: 0.85rem; color: #6b7280; margin-top: -10px;'>💡 <b>Tip:</b> Clicca sul nome del mese in alto nel calendario per aprire il menù a tendina con i mesi e gli anni.</p>", unsafe_allow_html=True)
     
     min_date = df_completo['Data_dt'].min().date() if not df_completo.empty else date.today()
     max_date = df_completo['Data_dt'].max().date() if not df_completo.empty else date.today()
 
-    col_filtro_1, col_filtro_2 = st.columns([1, 2])
-    
-    with col_filtro_1:
-        tipo_filtro = st.radio(
-            "Modalità di filtro:", 
-            ["Intervallo Esatto", "Mese Specifico"], 
-            horizontal=False
-        )
+    date_range = st.date_input(
+        "Seleziona l'intervallo temporale:", 
+        value=(min_date, max_date), 
+        min_value=min_date, 
+        max_value=max_date,
+        format="DD/MM/YYYY"
+    )
 
-    with col_filtro_2:
-        if tipo_filtro == "Intervallo Esatto":
-            date_range = st.date_input(
-                "Seleziona l'intervallo temporale:", 
-                value=(min_date, max_date), 
-                min_value=min_date, 
-                max_value=max_date,
-                format="DD/MM/YYYY"
-            )
-            if isinstance(date_range, tuple) and len(date_range) == 2:
-                df_filtrato = df_completo.loc[(df_completo['Data_dt'].dt.date >= date_range[0]) & (df_completo['Data_dt'].dt.date <= date_range[1])].copy()
-            else:
-                df_filtrato = df_completo.copy()
-                
-        elif tipo_filtro == "Mese Specifico":
-            if not df_completo.empty:
-                mesi_ita = {1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile", 5: "Maggio", 6: "Giugno", 7: "Luglio", 8: "Agosto", 9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre"}
-                
-                mesi_disp = sorted(df_completo['Data_dt'].dt.to_period('M').unique())
-                opzioni_mesi = [f"{mesi_ita[m.month]} {m.year}" for m in mesi_disp]
-                mappa_mesi = {f"{mesi_ita[m.month]} {m.year}": m for m in mesi_disp}
-                
-                mese_scelto = st.selectbox("Seleziona il mese e l'anno da analizzare:", opzioni_mesi)
-                periodo_selezionato = mappa_mesi[mese_scelto]
-                
-                df_filtrato = df_completo.loc[(df_completo['Data_dt'].dt.month == periodo_selezionato.month) & (df_completo['Data_dt'].dt.year == periodo_selezionato.year)].copy()
-            else:
-                df_filtrato = df_completo.copy()
-                st.info("Nessun dato temporale disponibile nel file.")
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        df_filtrato = df_completo.loc[(df_completo['Data_dt'].dt.date >= date_range[0]) & (df_completo['Data_dt'].dt.date <= date_range[1])].copy()
+    else: 
+        df_filtrato = df_completo.copy()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -490,11 +501,9 @@ if 'df_cantiere' in st.session_state:
         # 2. Diagramma a Torta (Incidenza Percentuale)
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         
-        # Normalizzazione testuale del Parametro
         df_filtrato['Parametro_Title'] = df_filtrato['Parametro'].astype(str).str.title()
         df_pie = df_filtrato.groupby('Parametro_Title')['CO2_Totale_kg'].sum().reset_index()
         
-        # BUGFIX: Rimuove i valori negativi o pari a zero che distorcono la grafica di Plotly (come da foto inviata)
         df_pie = df_pie[df_pie['CO2_Totale_kg'] > 0]
         
         colori_parametri = {
