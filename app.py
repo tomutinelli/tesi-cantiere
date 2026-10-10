@@ -162,35 +162,35 @@ st.subheader("Caricamento Dataset di Progetto")
 def reset_dati():
     if 'df_cantiere' in st.session_state: del st.session_state['df_cantiere']
 
-tab1, tab2 = st.tabs(["Elaborazione Intelligente (IA + Distribuzione Automatica)", "Caricamento CSV Manuale"])
+tab1, tab2 = st.tabs(["Elaborazione Intelligente (Match WBS + Distribuzione Lavorativa)", "Caricamento CSV Manuale"])
 
 with tab1:
     st.markdown("""
     <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
         <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Guida Operativa IA</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 0;'>
-            L'Intelligenza Artificiale effettuerà il <b>matching semantico</b>: analizzerà le macro-fasi del cronoprogramma e assegnerà logicamente i materiali esportati da Revit alla fase costruttiva corretta (es. paratie -> scavi). 
-            Il motore Python si occuperà poi della precisa divisione matematica sui giorni lavorativi.
+            L'Intelligenza Artificiale estrarrà i quantitativi ed effettuerà un <b>matching esatto</b> tra il codice WBS presente nell'abaco e il medesimo codice nel nome dell'attività sul cronoprogramma.
+            Il motore Python ripartirà matematicamente le masse <b>esclusivamente sui giorni lavorativi effettivi (lun-ven)</b> previsti dal Gantt.
         </p>
     </div>
     """, unsafe_allow_html=True)
     
     files_unificati = st.file_uploader(
-        "Carica Abachi Revit (CSV) e Cronoprogramma", 
+        "Carica Abachi Revit (CSV) e Cronoprogramma (PDF/XLSX)", 
         type=['pdf', 'txt', 'xlsx', 'csv', 'xml', 'ifc'], 
         accept_multiple_files=True,
         key="ia_unified",
         on_change=reset_dati
     )
 
-    if st.button("Estrai, Incrocia e Distribuisci Dati", key="btn_ia"):
+    if st.button("Estrai, Abbina e Distribuisci Dati", key="btn_ia"):
         api_key = st.secrets.get("GEMINI_API_KEY")
         if not api_key: st.error("Chiave API mancante nei Secrets.")
         elif not files_unificati: st.warning("Carica almeno un file per procedere.")
         else:
             try:
                 client = genai.Client(api_key=api_key)
-                with st.spinner("L'IA sta elaborando i collegamenti logici tra i materiali e le macro-fasi del cronoprogramma..."):
+                with st.spinner("L'IA sta incrociando i codici WBS e calcolando le distribuzioni sui giorni lavorativi..."):
                     contents = []
                     for file_obj in files_unificati:
                         file_obj.seek(0)
@@ -198,29 +198,28 @@ with tab1:
                         mime = 'application/pdf' if estensione == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if estensione == 'xlsx' else 'text/plain'
                         contents.append(types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime))
                     
-                    # --- PROMPT AGGIORNATO PER IL MATCHING SEMANTICO ---
+                    # --- NUOVO PROMPT BASATO SULLA CHIAVE WBS ESATTA ---
                     prompt_sistema = """
-                    Sei un ingegnere edile e BIM manager esperto in cantierizzazione. Il tuo compito è estrarre i dati degli abachi materiali e associarli logicamente alle fasi del cronoprogramma del cantiere.
-                    ATTENZIONE: Il cronoprogramma fornito contiene solo MACRO-FASI lavorative. Non troverai i codici WBS granulari o i nomi esatti degli abachi. 
-                    Devi usare il tuo RAGIONAMENTO INGEGNERISTICO per capire in quale macro-fase viene impiegato ciascun materiale, per poi assegnargli le date di quella macro-fase.
+                    Sei un data analyst e BIM manager. Il tuo compito è estrarre i dati dagli abachi e accoppiarli rigorosamente alle date del cronoprogramma di Gantt sfruttando i codici WBS univoci.
+                    
+                    REGOLE OPERATIVE STRETTE:
+                    1. Analisi Abachi: Leggi i CSV e trova la colonna WBS (es. Ss_20_20, Ss_30_12_20, ecc.), il Nome del materiale e il totale in Massa (solo numero, es. 13775.92).
+                    2. Analisi Cronoprogramma: Leggi il documento Gantt. Troverai le attività del progetto; le attività chiave iniziano proprio con il codice WBS (es. "Ss_20_20_Strutture acciaio e varo..."). 
+                    3. Match Deterministico: Abbina il materiale dell'abaco ESATTAMENTE all'attività del cronoprogramma che riporta lo STESSO IDENTICO codice WBS all'inizio del nome.
+                    4. Output Date: Per quell'attività abbinata, estrai la Data d'inizio e la Data di fine esatte come segnate nel documento.
+                    
+                    NON ESEGUIRE CALCOLI SUI GIORNI. Estrai solo i totali assoluti da distribuire e le date di inizio/fine della macro-fase.
 
-                    NON DEVI ESEGUIRE DIVISIONI MATEMATICHE SUI GIORNI. Estrai solo i totali assoluti e le date limite!
-
-                    REGOLE FONDAMENTALI:
-                    1. Estrazione Quantità: Dagli abachi, estrai il nome del materiale e la sua quantità totale. Dalla colonna "Massa" estrai SOLO il valore numerico puro (rimuovi unità di misura come kg). Usa il punto per i decimali.
-                    2. Abbinamento Semantico (MATCHING INTELLIGENTE): Leggi le macro-fasi del cronoprogramma (es. Scavi, Strutture, Viabilità, ecc.) e le relative date di Inizio e Fine. Dedici a quale macro-fase appartiene ogni materiale. (Es: "Paratie in acciaio" -> associalo alla fase Scavi/Sostegno; "Pacchetti stradali / Asfalto" -> associalo alla fase Viabilità/Sistemazioni esterne; "Travi" -> Strutture).
-                    3. Assegnazione Date: Associa a ogni materiale la "Data_Inizio" e la "Data_Fine" della macro-fase a cui lo hai abbinato.
-
-                    Restituisci ESCLUSIVAMENTE una tabella CSV pura con queste esatte 5 intestazioni di colonna:
+                    Restituisci ESCLUSIVAMENTE un blocco di testo in formato CSV puro con le seguenti 5 colonne esatte, separate da virgola:
                     Parametro,Elemento,Quantita_Totale,Data_Inizio,Data_Fine
 
-                    - Parametro: Scrivi "Materiali" oppure "Macchinari".
-                    - Elemento: Il nome estratto del materiale (es. Acciaio S355 J2W).
-                    - Quantita_Totale: Numero assoluto (es. 13775.92). 
-                    - Data_Inizio: Formato AAAA-MM-GG ricavato dalla macro-fase.
-                    - Data_Fine: Formato AAAA-MM-GG ricavato dalla macro-fase.
+                    - Parametro: Scrivi "Materiali" (o "Macchinari").
+                    - Elemento: Il nome del materiale.
+                    - Quantita_Totale: Valore in cifre assolute con punto decimale.
+                    - Data_Inizio: Formato AAAA-MM-GG dell'attività abbinata.
+                    - Data_Fine: Formato AAAA-MM-GG dell'attività abbinata.
 
-                    Non inserire spiegazioni. Restituisci SOLO testo in formato CSV valido.
+                    Niente markdown, niente chiacchiere. Solo CSV grezzo.
                     """
                     contents.append(prompt_sistema)
                     
@@ -244,26 +243,31 @@ with tab1:
                         if csv_testo.startswith("```"):
                             csv_testo = csv_testo.split("```")[1].strip()
                             if csv_testo.startswith("csv"): csv_testo = csv_testo[3:].strip()
+                        elif "Parametro,Elemento" in csv_testo and "\n" in csv_testo:
+                             csv_testo = csv_testo[csv_testo.find("Parametro,Elemento"):]
                         
                         df_estratti = pd.read_csv(io.StringIO(csv_testo))
                         df_estratti.columns = df_estratti.columns.str.strip()
                         
-                        # Motore di distribuzione temporale Python
                         df_estratti['Data_Inizio'] = pd.to_datetime(df_estratti['Data_Inizio'], errors='coerce')
                         df_estratti['Data_Fine'] = pd.to_datetime(df_estratti['Data_Fine'], errors='coerce')
                         df_estratti['Quantita_Totale'] = pd.to_numeric(df_estratti['Quantita_Totale'], errors='coerce').fillna(0)
                         
-                        # Scarta righe il cui matching date è fallito
                         df_estratti = df_estratti.dropna(subset=['Data_Inizio', 'Data_Fine'])
                         
                         righe_distribuite = []
                         for index, row in df_estratti.iterrows():
-                            giorni = (row['Data_Fine'] - row['Data_Inizio']).days + 1
-                            if giorni < 1: giorni = 1
-                            quantita_giorn = row['Quantita_Totale'] / giorni
+                            # Spalma calcolo SOLO nei giorni feriali (Business Days: Lunedì - Venerdì)
+                            giorni_lavorativi = pd.bdate_range(start=row['Data_Inizio'], end=row['Data_Fine'])
+                            num_giorni = len(giorni_lavorativi)
                             
-                            for d in range(giorni):
-                                data_curr = row['Data_Inizio'] + pd.Timedelta(days=d)
+                            if num_giorni < 1: 
+                                num_giorni = 1
+                                giorni_lavorativi = [row['Data_Inizio']]
+                                
+                            quantita_giorn = row['Quantita_Totale'] / num_giorni
+                            
+                            for data_curr in giorni_lavorativi:
                                 righe_distribuite.append({
                                     'Data': data_curr.strftime('%Y-%m-%d'),
                                     'Parametro': row['Parametro'],
@@ -273,13 +277,12 @@ with tab1:
 
                         df_cantiere_grezzo = pd.DataFrame(righe_distribuite)
 
-                        # Mappatura Database LCI
                         df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(
                             lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1
                         )
                         
                         st.session_state['df_cantiere'] = df_cantiere_grezzo
-                        st.success("Abbinamento semantico e distribuzione temporale completati con successo!")
+                        st.success("Matching per codice WBS riuscito! Quantità distribuite matematicamente sui giorni lavorativi.")
             except Exception as e:
                 st.error(f"Errore di configurazione dell'elaborazione: {e}")
 
@@ -303,7 +306,7 @@ with tab2:
 st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================================
-# ELABORAZIONE E ANALISI LCA (INVARIATA)
+# ELABORAZIONE E ANALISI LCA
 # =====================================================================
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere'].copy()
