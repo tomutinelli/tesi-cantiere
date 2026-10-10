@@ -322,6 +322,7 @@ with tab2:
     if file_cantiere:
         if 'df_cantiere' not in st.session_state:
             try:
+                file_cantiere.seek(0)
                 st.session_state['df_cantiere'] = pd.read_csv(file_cantiere)
                 st.success("File CSV caricato correttamente!")
             except Exception as e:
@@ -363,9 +364,13 @@ if 'df_cantiere' in st.session_state:
     
     df_inventario_clean = df_inventario.drop_duplicates(subset=['Parametro_match', 'Elemento_match']).copy()
     
-    df_completo = pd.merge(df_cantiere, df_inventario_clean, on=['Parametro_match', 'Elemento_match'], how='left')
+    # FIS: aggiunti i suffixes per impedire KeyError sulle colonne omonime (es. Parametro_x e Parametro_y)
+    df_completo = pd.merge(df_cantiere, df_inventario_clean, on=['Parametro_match', 'Elemento_match'], how='left', suffixes=('', '_lci'))
     df_completo['Parametro'] = df_completo['Parametro'].fillna(df_completo['Parametro_match'])
     df_completo['Elemento'] = df_completo['Elemento'].fillna(df_completo['Elemento_match'])
+    df_completo.drop(columns=['Parametro_match', 'Elemento_match'], inplace=True, errors='ignore')
+    if 'Parametro_lci' in df_completo.columns: df_completo.drop(columns=['Parametro_lci'], inplace=True)
+    if 'Elemento_lci' in df_completo.columns: df_completo.drop(columns=['Elemento_lci'], inplace=True)
     
     mancanti = df_completo[df_completo['Fattore_Emissione'].isnull()]
     if not mancanti.empty:
@@ -405,5 +410,5 @@ if 'df_cantiere' in st.session_state:
 
         st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
         with st.expander("Esporta / Visualizza matrice dati completa"):
-            st.dataframe(df_filtrato.drop(columns=['Data_dt', 'Parametro_match', 'Elemento_match'], errors='ignore'), use_container_width=True)
+            st.dataframe(df_filtrato.drop(columns=['Data_dt'], errors='ignore'), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
