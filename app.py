@@ -327,4 +327,154 @@ elif "Esecuzione" in fase_cantiere:
                             
                     # Riconoscimento log Acqua (Litri)
                     elif any('lit' in c for c in col_lower) or any('vol' in c for c in col_lower):
-                        val_col = next(c for c in df_s.columns if
+                        val_col = next(c for c in df_s.columns if 'lit' in c.lower() or 'vol' in c.lower())
+                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                        for _, r in df_agg.iterrows():
+                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': r[val_col]})
+                            
+                    # Riconoscimento log Trasporti (Km)
+                    elif any('dist' in c for c in col_lower) or any('km' in c for c in col_lower):
+                        val_col = next(c for c in df_s.columns if 'dist' in c.lower() or 'km' in c.lower())
+                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                        for _, r in df_agg.iterrows():
+                            # Conversione dinamica distanza in consumo carburante (0.25 kg diesel al km)
+                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': r[val_col] * 0.25})
+                            
+                except Exception as e:
+                    st.error(f"Errore nella lettura del file {f.name}: {e}")
+
+        if righe_reali:
+            df_cantiere_reale = pd.DataFrame(righe_reali)
+            # Normalizzazione formati per compatibilità LCI
+            df_cantiere_reale['Quantita'] = pd.to_numeric(df_cantiere_reale['Quantita'], errors='coerce').fillna(0)
+            df_cantiere_reale = df_cantiere_reale.groupby(['Data', 'Parametro', 'Elemento'], as_index=False)['Quantita'].sum()
+            df_cantiere_reale['Elemento'] = df_cantiere_reale.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
+            
+            st.session_state['df_cantiere'] = df_cantiere_reale
+            st.success("Analisi telemetrica e normalizzazione dei dati completata con successo.")
+        else:
+            st.warning("Eseguire il caricamento di almeno un modulo (Materiali o Sensori) per generare il calcolo.")
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+# =====================================================================
+# ELABORAZIONE E ANALISI LCA (MODULO COMUNE)
+# =====================================================================
+if 'df_cantiere' in st.session_state:
+    df_cantiere = st.session_state['df_cantiere'].copy()
+    
+    # Generazione automatica rifiuti se assenti nel caricamento dinamico
+    rifiuti_presenti = (df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'rifiuti').any()
+    if not rifiuti_presenti:
+        mat_mask = df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'materiali'
+        if mat_mask.any():
+            df_sfrido = df_cantiere[mat_mask].copy()
+            df_sfrido['Parametro'] = 'Rifiuti'
+            df_sfrido['Quantita'] = df_sfrido['Quantita'] * 0.15 
+            df_sfrido['Elemento'] = 'Inerti / Macerie di demolizione'
+            df_cantiere = pd.concat([df_cantiere, df_sfrido], ignore_index=True)
+    
+    df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='mixed', errors='coerce')
+    
+    # Processo di incrocio dati (Matching) con il database LCI
+    df_cantiere['Parametro_match'] = df_cantiere['Parametro'].astype(str).str.strip().str.lower()
+    df_cantiere['Elemento_match'] = df_cantiere['Elemento'].astype(str).str.strip().str.lower()
+    df_inventario['Parametro_match'] = df_inventario['Parametro'].astype(str).str.strip().str.lower()
+    df_inventario['Elemento_match'] = df_inventario['Elemento'].astype(str).str.strip().str.lower()
+    
+    df_inventario_clean = df_inventario.drop_duplicates(subset=['Parametro_match', 'Elemento_match']).copy()
+    
+    df_completo = pd.merge(df_cantiere, df_inventario_clean, on=['Parametro_match', 'Elemento_match'], how='left', suffixes=('', '_lci'))
+    df_completo['Parametro'] = df_completo['Parametro'].fillna(df_completo['Parametro_match'])
+    df_completo['Elemento'] = df_completo['Elemento'].fillna(df_completo['Elemento_match'])
+    df_completo.drop(columns=['Parametro_match', 'Elemento_match'], inplace=True, errors='ignore')
+    if 'Parametro_lci' in df_completo.columns: df_completo.drop(columns=['Parametro_lci'], inplace=True)
+    if 'Elemento_lci' in df_completo.columns: df_completo.drop(columns=['Elemento_lci'], inplace=True)
+    
+    df_completo['Fattore_Emissione'] = df_completo['Fattore_Emissione'].fillna(0)
+    df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
+    
+    # -------------------------------------------------------------
+    # FILTRO TEMPORALE
+    # -------------------------------------------------------------
+    st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
+    st.subheader("Configurazione Temporale")
+    
+    min_date = df_completo['Data_dt'].min().date() if not df_completo.empty and pd.notna(df_completo['Data_dt'].min()) else date.today()
+    max_date = df_completo['Data_dt'].max().date() if not df_completo.empty and pd.notna(df_completo['Data_dt'].max()) else date.today()
+
+    date_range = st.date_input("Selezione intervallo di calcolo:", value=(min_date, max_date), min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
+
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        df_filtrato = df_completo.loc[(df_completo['Data_dt'].dt.date >= date_range[0]) & (df_completo['Data_dt'].dt.date <= date_range[1])].copy()
+    else: 
+        df_filtrato = df_completo.copy()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # --- VISUALIZZAZIONE GRAFICI ---
+    st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
+    st.subheader("Risultati Analitici")
+    if df_filtrato.empty: 
+        st.info("La selezione temporale non presenta dati elaborabili.")
+    else:
+        modo_visualizzazione = st.selectbox("Modalità di visualizzazione dati", ["Standard (Distribuzione Temporale)", "Analisi di Frequenza (KDE)", "Andamento (Media Mobile)", "Andamento (Media Fissa)"], index=0)
+
+        def genera_figura(df_dat, x_col, y_col, titolo, colore_base):
+            df_dat = df_dat.copy()
+            if df_dat.empty: return go.Figure()
+            if "Frequenza" in modo_visualizzazione:
+                fig = px.histogram(df_dat, x=y_col, nbins=20, marginal="violin", title=f"{titolo} - Analisi di Frequenza", labels={y_col: 'kg CO₂e'}, color_discrete_sequence=[colore_base])
+            elif "Media Mobile" in modo_visualizzazione:
+                df_dat = df_dat.sort_values(by=x_col)
+                df_dat['Media_Mobile'] = df_dat[y_col].rolling(window=7, min_periods=1).mean()
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Dato Giornaliero', marker_color=colore_base, opacity=0.4))
+                fig.add_trace(go.Scatter(x=df_dat[x_col], y=df_dat['Media_Mobile'], mode='lines', name='Media Mobile', line=dict(color='#111827', width=2)))
+                fig.update_layout(title=f"{titolo} - Variazione su Media Mobile")
+            elif "Media Fissa" in modo_visualizzazione:
+                media_val = df_dat[y_col].mean()
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Dato Giornaliero', marker_color=colore_base, opacity=0.5))
+                fig.add_hline(y=media_val, line_dash="dash", line_color="#4b5563", annotation_text=f"Media: {media_val:.2f}")
+                fig.update_layout(title=f"{titolo} - Riferimento su Media Fissa")
+            else:
+                fig = px.bar(df_dat, x=x_col, y=y_col, title=titolo, labels={y_col: 'kg CO₂e', x_col: ''})
+                fig.update_traces(marker_color=colore_base)
+            
+            fig.update_layout(height=380, font_family="Inter", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', title_font_size=13, title_font_color="#374151")
+            return fig
+
+        df_totale = df_filtrato.groupby('Data')['CO2_Totale_kg'].sum().reset_index()
+        st.plotly_chart(genera_figura(df_totale, 'Data', 'CO2_Totale_kg', "Andamento Complessivo Impronta Carbonica", "#111827"), use_container_width=True)
+        
+        st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+        df_filtrato['Parametro_Title'] = df_filtrato['Parametro'].astype(str).str.title()
+        df_pie = df_filtrato.groupby('Parametro_Title')['CO2_Totale_kg'].sum().reset_index()
+        df_pie = df_pie[df_pie['CO2_Totale_kg'] > 0]
+        
+        colori_parametri = {'Materiali': "#991b1b", 'Rifiuti': "#166534", 'Trasporti': "#4338ca", 'Energia': "#ca8a04", 'Acqua': "#0369a1", 'Macchinari': "#4b5563"}
+        if not df_pie.empty:
+            fig_pie = px.pie(df_pie, values='CO2_Totale_kg', names='Parametro_Title', title="Incidenza Strutturale per Categorie Operative", color='Parametro_Title', color_discrete_map=colori_parametri, hole=0.4)
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#ffffff', width=2)))
+            fig_pie.update_layout(height=450, font_family="Inter", showlegend=True, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', title_font_size=13, title_font_color="#374151")
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1: st.download_button("Esporta Dati Totali (Formato CSV)", data=df_totale.to_csv(index=False).encode('utf-8'), file_name="emissioni_totali.csv", mime="text/csv")
+        with col_exp2:
+            output_xlsx = io.BytesIO()
+            with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer: df_totale.to_excel(writer, index=False, sheet_name='Totale')
+            st.download_button("Esporta Dati Totali (Formato XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+        st.subheader("Analisi Disaggregata per Voci")
+        col_grafici = st.columns(2)
+        for idx, param in enumerate(df_filtrato['Parametro_Title'].dropna().unique()):
+            df_p = df_filtrato[df_filtrato['Parametro_Title'] == param].groupby('Data')['CO2_Totale_kg'].sum().reset_index()
+            with col_grafici[idx % 2]:
+                st.plotly_chart(genera_figura(df_p, 'Data', 'CO2_Totale_kg', param, colori_parametri.get(param, '#4b5563')), use_container_width=True)
+
+        with st.expander("Ispezione Matrice Dati"):
+            st.dataframe(df_filtrato.drop(columns=['Data_dt', 'Parametro_Title', 'Parametro_match', 'Elemento_match'], errors='ignore'), use_container_width=True)
+            
+    st.markdown("</div>", unsafe_allow_html=True)
