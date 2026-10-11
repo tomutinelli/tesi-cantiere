@@ -29,7 +29,7 @@ st.markdown("""
     div.minimal-card {
         background-color: #ffffff !important;
         border: 1px solid #e5e7eb !important;
-        border-radius: 6px !important;
+        border-radius: 4px !important;
         padding: 32px !important;
         box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03) !important;
         margin-bottom: 24px !important;
