@@ -124,11 +124,11 @@ def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
         if v.lower() in e_str or e_str in v.lower(): return v
             
     if p_str.lower() == 'materiali':
-        if 'calcestruzzo' in e_str or 'cls' in e_str or 'c45' in e_str: return 'Calcestruzzo'
+        if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
         if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
         if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
-        if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str or 'misto' in e_str: return 'Inerti'
-        if 'asfalto' in e_str or 'bitume' in e_str or 'strada' in e_str or 'Binder' in e_str or 'usura' in e_str: return 'Asfalto/Bitume'
+        if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str: return 'Inerti'
+        if 'asfalto' in e_str or 'bitume' in e_str or 'strada' in e_str: return 'Asfalto/Bitume'
         if 'legno' in e_str: return 'Legno'
         if 'vetro' in e_str: return 'Vetro'
         if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
@@ -144,44 +144,40 @@ def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
     if match: return match[0]
     return elemento_grezzo
 
+# Funzione robusta per leggere gli abachi CSV multipli e abbinarli alle date WBS
 def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
+    # 1. Leggiamo direttamente i CSV degli abachi con Pandas (senza passare dall'IA per le tabelle)
     tutti_materiali = []
     
     for f in lista_file_abachi:
-        if f.name.endswith('.csv') and 'sensor' not in f.name.lower():
+        if f.name.endswith('.csv'):
             try:
                 f.seek(0)
-                df_temp = pd.read_csv(f, header=1)
+                df_temp = pd.read_csv(f, skiprows=1) # salta la prima riga descrittiva dell'abaco Revit
                 df_temp.columns = [str(c).strip() for c in df_temp.columns]
                 
+                # Cerchiamo le colonne WBS, Nome e Massa
                 col_wbs = next((c for c in df_temp.columns if 'wbs' in c.lower()), df_temp.columns[0])
                 col_nome = next((c for c in df_temp.columns if 'nome' in c.lower() or 'material' in c.lower()), None)
                 col_massa = next((c for c in df_temp.columns if 'massa' in c.lower()), df_temp.columns[-1])
                 
-                current_wbs = 'Ss_20_20'
-                current_group = 'Materiale Strutturale'
-                
+                parent_wbs = None
                 for _, row in df_temp.iterrows():
-                    wbs_val = str(row[col_wbs]).strip() if pd.notna(row[col_wbs]) else ""
-                    nome_val = str(row[col_nome]).strip() if col_nome and pd.notna(row[col_nome]) else ""
+                    wbs_val = str(row[col_wbs]).strip()
+                    nome_val = str(row[col_nome]).strip() if col_nome and pd.notna(row[col_nome]) else "nan"
                     massa_str = str(row[col_massa]).replace(' kg', '').replace(',', '').strip()
                     
-                    if wbs_val.startswith('Ss_') or wbs_val.startswith('Pr_'):
-                        current_wbs = wbs_val
-                    
-                    if 'Pavimento:' in wbs_val or 'TOT:' in wbs_val:
-                        current_group = wbs_val
-                        continue
+                    if wbs_val.startswith('Ss_') and nome_val == 'nan':
+                        parent_wbs = wbs_val
+                    elif nome_val != 'nan' and massa_str.replace('.', '', 1).isdigit():
+                        assigned_wbs = wbs_val if wbs_val.startswith('Ss_') or wbs_val.startswith('Pr_') else parent_wbs
+                        if not assigned_wbs or assigned_wbs == 'nan': assigned_wbs = 'Ss_20_20' # fallback
                         
-                    if massa_str.replace('.', '', 1).isdigit():
-                        massa_val = float(massa_str)
-                        if massa_val > 0:
-                            elem_name = nome_val if nome_val and nome_val != 'nan' else (current_group if current_group else 'Materiale da costruzione')
-                            tutti_materiali.append({
-                                'WBS': current_wbs,
-                                'Nome': elem_name,
-                                'Massa': massa_val
-                            })
+                        tutti_materiali.append({
+                            'WBS': assigned_wbs,
+                            'Nome': nome_val,
+                            'Massa': float(massa_str)
+                        })
             except Exception:
                 pass
 
@@ -189,8 +185,10 @@ def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
     if df_mater_grezzo.empty:
         return pd.DataFrame()
 
+    # Aggreghiamo per WBS e Nome
     df_mater_agg = df_mater_grezzo.groupby(['WBS', 'Nome'], as_index=False)['Massa'].sum()
 
+    # 2. Usiamo l'IA SOLO per leggere le date dal PDF del cronoprogramma
     contents = []
     if file_cronoprogramma:
         file_cronoprogramma.seek(0)
@@ -202,7 +200,8 @@ def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
     Analizza il cronoprogramma e restituisci ESCLUSIVAMENTE un file CSV puro con queste 3 colonne esatte:
     WBS,Data_Inizio,Data_Fine
     
-    Estrai le date per ogni codice WBS presente. Formato date: AAAA-MM-GG. Nessun commento o markdown, solo CSV.
+    Estrai le date per ogni codice WBS presente (es. Ss_20_20, Pr_20_31_16_92, Ss_30_12_20, ecc.).
+    Formato date: AAAA-MM-GG. Nessun commento o markdown, solo CSV.
     """
     contents.append(prompt)
     
@@ -215,6 +214,7 @@ def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
         except Exception:
             time.sleep(3)
             
+    # Mappatura date predefinita di sicurezza basata sul vostro cantiere Istonia nel caso il PDF non risponda
     mappa_date_default = {
         'Ss_20_20': ('2024-10-14', '2025-02-14'),
         'Pr_20_31_16_92': ('2025-02-17', '2025-08-01'),
@@ -233,6 +233,7 @@ def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
         except Exception:
             pass
 
+    # Unione finale materiali con le date
     righe_finali = []
     for _, row in df_mater_agg.iterrows():
         wbs = row['WBS']
@@ -274,7 +275,7 @@ if "**Fase di progettazione**" in fase_cantiere:
     <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
         <h4>Analisi predittiva</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 10px; line-height: 1.5;'>
-        Carica i tuoi abachi in formato CSV e il cronoprogramma in PDF. Inserisci le stime giornaliere per macchinari, energia e acqua.
+        Carica i tuoi abachi in formato CSV e il cronoprogramma in PDF. Il sistema leggerà le masse e le distribuirà nei giorni lavorativi, calcolando i rifiuti (15%) e i trasporti.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -297,13 +298,13 @@ if "**Fase di progettazione**" in fase_cantiere:
             try:
                 client = genai.Client(api_key=api_key)
                 with st.spinner("Elaborazione abachi e matching temporale in corso..."):
-                    lista_abachi = [f for f in files_unificati if f.name.endswith('.csv') and 'sensor' not in f.name.lower()]
+                    lista_abachi = [f for f in files_unificati if f.name.endswith('.csv')]
                     file_gantt = next((f for f in files_unificati if f.name.endswith('.pdf') or f.name.endswith('.xlsx')), files_unificati[0])
                     
                     df_estratti = elabora_abachi_locali(lista_abachi, client, file_gantt)
                     
                     if df_estratti.empty:
-                        st.error("Nessun materiale estratto. Verifica i file CSV degli abachi.")
+                        st.error("Nessun materiale estratto. Verifica che i file CSV degli abachi siano presenti.")
                     else:
                         righe_arricchite = []
                         giorni_unici = set()
@@ -338,9 +339,9 @@ if "**Fase di progettazione**" in fase_cantiere:
 elif "**Fase di esecuzione**" in fase_cantiere:
     st.markdown("""
     <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
-        <h4>Monitoraggio dinamico con sensoristica IoT</h4>
+        <h4>Integrazione telemetria e monitoraggio dinamico</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 0; line-height: 1.5;'>
-        Carica tutto insieme (abachi CSV, cronoprogramma PDF e log dei sensori CSV). Il sistema calcolerà i materiali con la stessa identica logica della progettazione e integrerà in automatico i dati reali dei sensori IoT.
+        Carica tutti i file insieme (abachi CSV, cronoprogramma PDF e log dei sensori CSV). Il sistema calcolerà i materiali BIM e integrerà la telemetria reale.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -356,7 +357,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
             else:
                 try:
                     client = genai.Client(api_key=api_key)
-                    with st.spinner("Elaborazione abachi materiali BIM e lettura log sensori IoT in corso..."):
+                    with st.spinner("Elaborazione materiali BIM e sensori IoT in corso..."):
                         lista_abachi = [f for f in files_unificati_esec if f.name.endswith('.csv') and 'sensor' not in f.name.lower()]
                         file_gantt = next((f for f in files_unificati_esec if f.name.endswith('.pdf')), None)
                         
@@ -375,34 +376,35 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_giorn/28000)*30*0.25})
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
 
-                        for f in files_unificati_esec:
-                            if 'sensor' in f.name.lower() or (f.name.endswith('.csv') and f not in lista_abachi):
-                                try:
-                                    f.seek(0)
-                                    df_s = pd.read_csv(f)
-                                    col_lower = [c.lower() for c in df_s.columns]
-                                    date_col = next((c for c in df_s.columns if 'date' in c.lower() or 'time' in c.lower() or 'dat' in c.lower() or 'timestamp' in c.lower()), None)
-                                    
-                                    if date_col:
-                                        if any('kwh' in c for c in col_lower) or any('energy' in c for c in col_lower):
-                                            val_col = next(c for c in df_s.columns if 'kwh' in c.lower() or 'energy' in c.lower())
-                                            df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
-                                            for _, r in df_agg.iterrows():
-                                                righe_reali.append({'Data': r[date_col], 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': r[val_col]})
-                                                
-                                        elif any('lit' in c for c in col_lower) or any('vol' in c for c in col_lower) or any('water' in c for c in col_lower):
-                                            val_col = next(c for c in df_s.columns if 'lit' in c.lower() or 'vol' in c.lower() or 'water' in c.lower())
-                                            df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
-                                            for _, r in df_agg.iterrows():
-                                                righe_reali.append({'Data': r[date_col], 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': r[val_col]})
-                                                
-                                        elif any('dist' in c for c in col_lower) or any('km' in c for c in col_lower):
-                                            val_col = next(c for c in df_s.columns if 'dist' in c.lower() or 'km' in c.lower())
-                                            df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
-                                            for _, r in df_agg.iterrows():
-                                                righe_reali.append({'Data': r[date_col], 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': r[val_col] * 0.25})
-                                except Exception:
-                                    pass
+                    # Integrazione log sensori
+                    for f in files_unificati_esec:
+                        if 'sensor' in f.name.lower() or f.name.endswith('.csv'):
+                            try:
+                                f.seek(0)
+                                df_s = pd.read_csv(f)
+                                col_lower = [c.lower() for c in df_s.columns]
+                                date_col = next((c for c in df_s.columns if 'date' in c.lower() or 'time' in c.lower() or 'dat' in c.lower() or 'timestamp' in c.lower()), None)
+                                
+                                if date_col:
+                                    if any('kwh' in c for c in col_lower) or any('energy' in c for c in col_lower):
+                                        val_col = next(c for c in df_s.columns if 'kwh' in c.lower() or 'energy' in c.lower())
+                                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                                        for _, r in df_agg.iterrows():
+                                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': r[val_col]})
+                                            
+                                    elif any('lit' in c for c in col_lower) or any('vol' in c for c in col_lower) or any('water' in c for c in col_lower):
+                                        val_col = next(c for c in df_s.columns if 'lit' in c.lower() or 'vol' in c.lower() or 'water' in c.lower())
+                                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                                        for _, r in df_agg.iterrows():
+                                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': r[val_col]})
+                                            
+                                    elif any('dist' in c for c in col_lower) or any('km' in c for c in col_lower):
+                                        val_col = next(c for c in df_s.columns if 'dist' in c.lower() or 'km' in c.lower())
+                                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                                        for _, r in df_agg.iterrows():
+                                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': r[val_col] * 0.25})
+                            except Exception:
+                                pass
 
                 except Exception as e:
                     st.error(f"Errore: {e}")
@@ -414,7 +416,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
             df_cantiere_reale['Elemento'] = df_cantiere_reale.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
             
             st.session_state['df_cantiere'] = df_cantiere_reale
-            st.success("Monitoraggio dinamico unificato con successo (Materiali BIM calcolati come in progetto + Sensori IoT reali).")
+            st.success("Modello dinamico unificato con successo.")
         else:
             st.warning("Carica i file necessari per avviare il calcolo.")
 
@@ -509,7 +511,7 @@ if 'df_cantiere' in st.session_state:
         with col_exp2:
             output_xlsx = io.BytesIO()
             with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer: df_totale.to_excel(writer, index=False, sheet_name='Totale')
-            st.download_button("Esportaదన dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("Esporta dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
         st.subheader("Analisi disaggregata per voci strutturali")
