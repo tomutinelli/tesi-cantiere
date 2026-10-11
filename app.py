@@ -124,11 +124,11 @@ def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
         if v.lower() in e_str or e_str in v.lower(): return v
             
     if p_str.lower() == 'materiali':
-        if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
+        if 'calcestruzzo' in e_str or 'cls' in e_str or 'c45' in e_str: return 'Calcestruzzo'
         if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
         if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
-        if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str: return 'Inerti'
-        if 'asfalto' in e_str or 'bitume' in e_str or 'strada' in e_str: return 'Asfalto/Bitume'
+        if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str or 'misto' in e_str: return 'Inerti'
+        if 'asfalto' in e_str or 'bitume' in e_str or 'strada' in e_str or 'Binder' in e_str or 'usura' in e_str: return 'Asfalto/Bitume'
         if 'legno' in e_str: return 'Legno'
         if 'vetro' in e_str: return 'Vetro'
         if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
@@ -151,30 +151,37 @@ def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
         if f.name.endswith('.csv') and 'sensor' not in f.name.lower():
             try:
                 f.seek(0)
-                df_temp = pd.read_csv(f, skiprows=1)
+                df_temp = pd.read_csv(f, header=1)
                 df_temp.columns = [str(c).strip() for c in df_temp.columns]
                 
                 col_wbs = next((c for c in df_temp.columns if 'wbs' in c.lower()), df_temp.columns[0])
                 col_nome = next((c for c in df_temp.columns if 'nome' in c.lower() or 'material' in c.lower()), None)
                 col_massa = next((c for c in df_temp.columns if 'massa' in c.lower()), df_temp.columns[-1])
                 
-                parent_wbs = None
+                current_wbs = 'Ss_20_20'
+                current_group = 'Materiale Strutturale'
+                
                 for _, row in df_temp.iterrows():
-                    wbs_val = str(row[col_wbs]).strip()
-                    nome_val = str(row[col_nome]).strip() if col_nome and pd.notna(row[col_nome]) else "nan"
+                    wbs_val = str(row[col_wbs]).strip() if pd.notna(row[col_wbs]) else ""
+                    nome_val = str(row[col_nome]).strip() if col_nome and pd.notna(row[col_nome]) else ""
                     massa_str = str(row[col_massa]).replace(' kg', '').replace(',', '').strip()
                     
-                    if wbs_val.startswith('Ss_') and nome_val == 'nan':
-                        parent_wbs = wbs_val
-                    elif nome_val != 'nan' and massa_str.replace('.', '', 1).isdigit():
-                        assigned_wbs = wbs_val if wbs_val.startswith('Ss_') or wbs_val.startswith('Pr_') else parent_wbs
-                        if not assigned_wbs or assigned_wbs == 'nan': assigned_wbs = 'Ss_20_20'
+                    if wbs_val.startswith('Ss_') or wbs_val.startswith('Pr_'):
+                        current_wbs = wbs_val
+                    
+                    if 'Pavimento:' in wbs_val or 'TOT:' in wbs_val:
+                        current_group = wbs_val
+                        continue
                         
-                        tutti_materiali.append({
-                            'WBS': assigned_wbs,
-                            'Nome': nome_val,
-                            'Massa': float(massa_str)
-                        })
+                    if massa_str.replace('.', '', 1).isdigit():
+                        massa_val = float(massa_str)
+                        if massa_val > 0:
+                            elem_name = nome_val if nome_val and nome_val != 'nan' else (current_group if current_group else 'Materiale da costruzione')
+                            tutti_materiali.append({
+                                'WBS': current_wbs,
+                                'Nome': elem_name,
+                                'Massa': massa_val
+                            })
             except Exception:
                 pass
 
@@ -350,7 +357,6 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                 try:
                     client = genai.Client(api_key=api_key)
                     with st.spinner("Elaborazione abachi materiali BIM e lettura log sensori IoT in corso..."):
-                        # 1. CALCOLO MATERIALI IDENTICO ALLA PROGETTAZIONE
                         lista_abachi = [f for f in files_unificati_esec if f.name.endswith('.csv') and 'sensor' not in f.name.lower()]
                         file_gantt = next((f for f in files_unificati_esec if f.name.endswith('.pdf')), None)
                         
@@ -369,7 +375,6 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_giorn/28000)*30*0.25})
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
 
-                        # 2. LETTURA SENSORI IOT REALI (Energia, Acqua, Trasporti/Macchinari)
                         for f in files_unificati_esec:
                             if 'sensor' in f.name.lower() or (f.name.endswith('.csv') and f not in lista_abachi):
                                 try:
@@ -504,7 +509,7 @@ if 'df_cantiere' in st.session_state:
         with col_exp2:
             output_xlsx = io.BytesIO()
             with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer: df_totale.to_excel(writer, index=False, sheet_name='Totale')
-            st.download_button("Esporta dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("Esportaదన dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
         st.subheader("Analisi disaggregata per voci strutturali")
