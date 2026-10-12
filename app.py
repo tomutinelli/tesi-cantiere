@@ -310,7 +310,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         api_key = st.secrets.get("GEMINI_API_KEY")
         
         # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)        
-        if files_bim:
+        if not files_bim:
             if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
             else:
                 try:
