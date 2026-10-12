@@ -294,7 +294,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         # Unifichiamo TUTTI i file in una singola richiesta IA
         tutti_i_files = (files_bim if files_bim else []) + (files_sensori if files_sensori else [])
         
-        if non api_key: st.error("Chiave API mancante per l'elaborazione.")
+        if not api_key: st.error("Chiave API mancante per l'elaborazione.")
         elif not tutti_i_files: st.warning("Eseguire il caricamento di almeno un pacchetto dati (BIM o Sensori) per generare il calcolo.")
         else:
             try:
