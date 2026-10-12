@@ -313,8 +313,6 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                                     # Sfridi e logistica
                                     q_rif = q_giorn * 0.15
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
-                                    righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_giorn/28000)*30*0.25})
-                                    righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
                 except Exception as e:
                     st.error(f"Errore nell'elaborazione del modello BIM: {e}")
 
