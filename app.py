@@ -315,7 +315,8 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
                 except Exception as e:
                     st.error(f"Errore nell'elaborazione del modello BIM: {e}")
-
+        else:
+            print(files_bim)
         # 2. Elaborazione Modulo Sensori
         if files_sensori:
             for f in files_sensori:
