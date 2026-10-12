@@ -217,11 +217,11 @@ if "**Fase di progettazione**" in fase_cantiere:
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        stima_macchinari = st.number_input("**Macchinari** (kg diesel/giorno)", value=45.0, min_value=0.0, step=5.0)
+        stima_macchinari = st.number_input("**Macchinari** (kg diesel/giorno)", value=0.0, min_value=0.0, step=5.0)
     with col2:
-        stima_energia = st.number_input("**Energia elettrica** (kWh/giorno)", value=120.0, min_value=0.0, step=10.0)
+        stima_energia = st.number_input("**Energia elettrica** (kWh/giorno)", value=0.0, min_value=0.0, step=10.0)
     with col3:
-        stima_acqua = st.number_input("**Acqua** (litri/giorno)", value=500.0, min_value=0.0, step=50.0)
+        stima_acqua = st.number_input("**Acqua** (litri/giorno)", value=0.0, min_value=0.0, step=50.0)
     
     files_unificati = st.file_uploader("Documentazione di cantiere: abachi e cronoprogramma (file multipli)", type=['pdf', 'txt', 'xlsx', 'csv'], accept_multiple_files=True)
 
