@@ -31,6 +31,10 @@ def browser_log(messaggio, dati=None):
 
 st.set_page_config(page_title="EcoSite Tracker | Analisi LCA", layout="wide")
 
+# Inizializzazione sicura dello stato all'avvio
+if 'df_cantiere' not in st.session_state:
+    st.session_state['df_cantiere'] = pd.DataFrame()
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
@@ -216,7 +220,7 @@ st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Impostazioni architettura dati")
 
 def reset_dati():
-    if 'df_cantiere' in st.session_state: del st.session_state['df_cantiere']
+    st.session_state['df_cantiere'] = pd.DataFrame()
 
 fase_cantiere = st.radio(
     "Seleziona la tipologia di analisi LCA:",
@@ -310,7 +314,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         api_key = st.secrets.get("GEMINI_API_KEY")
         
         # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)        
-        if not files_bim:
+        if files_bim:
             if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
             else:
                 try:
@@ -385,7 +389,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
 st.markdown("</div>", unsafe_allow_html=True)
 
 
-if 'df_cantiere' in st.session_state:
+if 'df_cantiere' in st.session_state and not st.session_state['df_cantiere'].empty:
 
     df_cantiere = st.session_state['df_cantiere'].copy()
     browser_log("Dati cantiere caricati", df_cantiere)
@@ -489,3 +493,5 @@ if 'df_cantiere' in st.session_state:
             st.dataframe(df_filtrato.drop(columns=['Data_dt', 'Parametro_Title', 'Parametro_match', 'Elemento_match'], errors='ignore'), use_container_width=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
+else:
+    st.info("Carica i file di progetto o di monitoraggio e avvia l'elaborazione per visualizzare le analisi LCA e i grafici.")
