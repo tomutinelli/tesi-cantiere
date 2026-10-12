@@ -19,7 +19,7 @@ st.markdown("""
     html, body, [class*="css"] {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
         color: #1f2937;
-        background-color: #faf9f6;
+        background-color: #f9fafb;
     }
 
     #MainMenu {visibility: hidden;}
@@ -29,22 +29,22 @@ st.markdown("""
     div.minimal-card {
         background-color: #ffffff !important;
         border: 1px solid #e5e7eb !important;
-        border-radius: 6px !important;
+        border-radius: 4px !important;
         padding: 32px !important;
-        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02) !important;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03) !important;
         margin-bottom: 24px !important;
     }
 
-    h1 { font-weight: 600; letter-spacing: -0.02em; color: #111827; font-size: 1.8rem; }
+    h1 { font-weight: 600; letter-spacing: -0.02em; color: #111827; font-size: 1.75rem; }
     h2, h3 { font-weight: 500; letter-spacing: -0.01em; color: #374151; }
     h4 { font-weight: 500; color: #4b5563; font-size: 1.05rem; margin-top: 0; }
 
     .stRadio label, .stNumberInput label, .stDateInput label, .stFileUploader label, .stSelectbox label {
-        font-weight: 500; font-size: 0.9rem; color: #374151;
+        font-weight: 500; font-size: 0.85rem; color: #374151;
     }
     
     .stRadio div[role="radiogroup"] {
-        background-color: #ffffff; padding: 16px; border-radius: 6px; border: 1px solid #e5e7eb;
+        background-color: #ffffff; padding: 16px; border-radius: 4px; border: 1px solid #e5e7eb;
     }
 
     .custom-dl-btn {
@@ -58,7 +58,7 @@ st.markdown("""
     }
     
     .custom-dl-btn:hover {
-        border-color: #9ca3af !important; background-color: #f9fafb !important;
+        border-color: #9ca3af !important; background-color: #f3f4f6 !important;
         color: #111827 !important;
     }
 </style>
@@ -111,7 +111,7 @@ percorso_lci = "LCI.xlsx"
 df_inventario = carica_database_lci(percorso_lci)
 
 if df_inventario is None or df_inventario.empty:
-    st.error(f"Errore: database LCI '{percorso_lci}' non reperibile o corrotto.")
+    st.error(f"Errore di sistema: database LCI '{percorso_lci}' non reperibile o corrotto.")
     st.stop()
 
 def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
@@ -144,24 +144,73 @@ def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
     if match: return match[0]
     return elemento_grezzo
 
+def elabora_materiali_bim_con_ia(client_ia, lista_file):
+    contents = []
+    for f in lista_file:
+        f.seek(0)
+        ext = f.name.split('.')[-1].lower()
+        mime = 'application/pdf' if ext == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if ext in ['xlsx', 'xls'] else 'text/plain'
+        contents.append(types.Part.from_bytes(data=f.getvalue(), mime_type=mime))
+    
+    prompt = """
+    Sei un esperto BIM e analista dati. Analizza i file allegati: gli abachi dei materiali (esportati da Revit) e il cronoprogramma di cantiere.
+    Il tuo compito è:
+    1. Identificare i codici WBS negli abachi e la relativa massa totale in kg del materiale.
+    2. Trovare gli stessi codici WBS nel cronoprogramma per determinare la data di inizio e fine dell'attività lavorativa associata.
+    3. Restituire in output ESCLUSIVAMENTE un file in formato CSV puro con le seguenti 5 colonne esatte, separate da virgola:
+    Parametro,Elemento,Quantita_Totale,Data_Inizio,Data_Fine
+
+    Istruzioni di compilazione:
+    - Parametro: inserire sempre la stringa "Materiali".
+    - Elemento: inserire il nome del materiale come indicato nell'abaco (es. "Acciaio S355 J2W").
+    - Quantita_Totale: valore numerico assoluto con punto decimale (es. 1382813.97). Non includere unità di misura.
+    - Data_Inizio: formato AAAA-MM-GG.
+    - Data_Fine: formato AAAA-MM-GG.
+
+    Non inserire commenti, note o formattazione markdown. Restituisci unicamente la tabella CSV.
+    """
+    contents.append(prompt)
+    
+    csv_out = ""
+    for _ in range(3):
+        try:
+            res = client_ia.models.generate_content(model='gemini-3.6-flash', contents=contents)
+            csv_out = res.text.strip()
+            break
+        except Exception as e:
+            time.sleep(5)
+            
+    if not csv_out: return pd.DataFrame()
+    
+    if csv_out.startswith("```"): csv_out = csv_out.split("```")[1].replace("csv\n", "").strip()
+    elif "Parametro,Elemento" in csv_out: csv_out = csv_out[csv_out.find("Parametro,Elemento"):]
+    
+    df = pd.read_csv(io.StringIO(csv_out))
+    df.columns = df.columns.str.strip()
+    df['Data_Inizio'] = pd.to_datetime(df['Data_Inizio'], errors='coerce')
+    df['Data_Fine'] = pd.to_datetime(df['Data_Fine'], errors='coerce')
+    df['Quantita_Totale'] = pd.to_numeric(df['Quantita_Totale'], errors='coerce').fillna(0)
+    return df.dropna(subset=['Data_Inizio', 'Data_Fine'])
+
 
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-st.subheader("Configurazione progetto e inserimento dati")
+st.subheader("Impostazioni architettura dati")
 
 def reset_dati():
     if 'df_cantiere' in st.session_state: del st.session_state['df_cantiere']
 
 fase_cantiere = st.radio(
-    "Seleziona la fase operativa dell'analisi:",
+    "Seleziona la tipologia di analisi LCA:",
     ["Fase di progettazione", "Fase di esecuzione"],
     on_change=reset_dati
 )
 
 if fase_cantiere == "Fase di progettazione":
     st.markdown("""
-    <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 20px;'>
+    <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
+        <h4>Analisi predittiva</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 10px; line-height: 1.5;'>
-        Questa fase esclude l'impatto dei materiali. Il sistema si limiterà a generare le impronte ambientali quotidiane per i mezzi d'opera, i consumi elettrici e idrici basandosi sul cronoprogramma del cantiere (Gantt) e sulle stime che andrai a inserire qui sotto.
+        Questa modalità calcola l'impronta carbonica a livello previsionale. Il sistema estrae e distribuisce temporalmente le masse dei materiali dagli abachi BIM, calcola la produzione di rifiuti al 15% di sfrido e i relativi trasporti, e infine somma le stime operative inserite nei campi sottostanti.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -174,115 +223,102 @@ if fase_cantiere == "Fase di progettazione":
     with col3:
         stima_acqua = st.number_input("**Acqua** (litri/giorno)", value=500.0, min_value=0.0, step=50.0)
     
-    file_gantt = st.file_uploader("Carica il cronoprogramma (PDF, CSV, XLSX)", type=['pdf', 'txt', 'xlsx', 'csv'])
+    files_unificati = st.file_uploader("Documentazione di cantiere: abachi e cronoprogramma (file multipli)", type=['pdf', 'txt', 'xlsx', 'csv'], accept_multiple_files=True)
 
-    if st.button("Elabora stima predittiva"):
+    if st.button("Elabora modello predittivo"):
         api_key = st.secrets.get("GEMINI_API_KEY")
-        if not api_key: 
-            st.error("Chiave API mancante.")
-        elif not file_gantt: 
-            st.warning("È necessario caricare il cronoprogramma per procedere.")
+        if not api_key: st.error("Chiave API mancante nella configurazione.")
+        elif not files_unificati: st.warning("È necessario caricare la documentazione per avviare il matching.")
         else:
             try:
                 client = genai.Client(api_key=api_key)
-                with st.spinner("Estrazione semantica delle date in corso..."):
-                    file_gantt.seek(0)
-                    estensione = file_gantt.name.split('.')[-1].lower()
-                    mime = 'application/pdf' if estensione == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if estensione == 'xlsx' else 'text/plain'
+                with st.spinner("Estrazione semantica ed elaborazione matrici WBS in corso..."):
+                    df_estratti = elabora_materiali_bim_con_ia(client, files_unificati)
                     
-                    prompt_sistema = """
-                    Analizza il cronoprogramma caricato. Identifica la data di inizio assoluta (la primissima attività) e la data di fine assoluta (l'ultima attività) dell'intero cantiere.
-                    Restituisci unicamente un file CSV strutturato esattamente in questo modo, con una sola riga di dati:
-                    Data_Inizio,Data_Fine
-                    
-                    Le date devono essere in formato AAAA-MM-GG. Nessun altro testo.
-                    """
-                    
-                    csv_testo = ""
-                    for tentativo in range(3):
-                        try:
-                            response = client.models.generate_content(model='gemini-3.6-flash', contents=[types.Part.from_bytes(data=file_gantt.getvalue(), mime_type=mime), prompt_sistema])
-                            csv_testo = response.text.strip()
-                            break
-                        except Exception as e:
-                            if any(err in str(e) for err in ["429", "503", "UNAVAILABLE"]): time.sleep(5)
-                            else: break
-                    
-                    if not csv_testo: 
-                        st.error("Errore nell'estrazione. Riprova più tardi.")
+                    if df_estratti.empty:
+                        st.error("L'elaborazione non ha prodotto dati validi. Verifica l'integrità dei documenti.")
                     else:
-                        if csv_testo.startswith("```"): csv_testo = csv_testo.split("```")[1].replace("csv\n", "").strip()
-                        elif "Data_Inizio,Data_Fine" in csv_testo: csv_testo = csv_testo[csv_testo.find("Data_Inizio,Data_Fine"):]
+                        righe_arricchite = []
+                        giorni_unici = set()
                         
-                        df_estratti = pd.read_csv(io.StringIO(csv_testo))
-                        df_estratti.columns = df_estratti.columns.str.strip()
-                        data_in = pd.to_datetime(df_estratti['Data_Inizio'].iloc[0], errors='coerce')
-                        data_fi = pd.to_datetime(df_estratti['Data_Fine'].iloc[0], errors='coerce')
-                        
-                        if pd.notna(data_in) and pd.notna(data_fi):
-                            giorni_lavorativi = pd.bdate_range(start=data_in, end=data_fi)
-                            righe_arricchite = []
+                        for index, row in df_estratti.iterrows():
+                            giorni_lavorativi = pd.bdate_range(start=row['Data_Inizio'], end=row['Data_Fine'])
+                            if len(giorni_lavorativi) < 1: giorni_lavorativi = [row['Data_Inizio']]
+                            quantita_giorn = row['Quantita_Totale'] / len(giorni_lavorativi)
                             
                             for d in giorni_lavorativi:
                                 data_str = d.strftime('%Y-%m-%d')
-                                righe_arricchite.append({'Data': data_str, 'Parametro': 'Macchinari', 'Elemento': 'Diesel', 'Quantita': stima_macchinari})
-                                righe_arricchite.append({'Data': data_str, 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': stima_energia})
-                                righe_arricchite.append({'Data': data_str, 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': stima_acqua})
+                                giorni_unici.add(data_str)
+                                
+                                # Allocazione materiale
+                                righe_arricchite.append({'Data': data_str, 'Parametro': 'Materiali', 'Elemento': row['Elemento'], 'Quantita': quantita_giorn})
+                                
+                                # Sfridi e logistica
+                                q_rif = quantita_giorn * 0.15
+                                righe_arricchite.append({'Data': data_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
+                                righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (quantita_giorn/28000)*30*0.25})
+                                righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
 
-                            df_cantiere_grezzo = pd.DataFrame(righe_arricchite)
-                            df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
-                            st.session_state['df_cantiere'] = df_cantiere_grezzo
-                            st.success(f"Analisi completata: generati consumi per {len(giorni_lavorativi)} giorni lavorativi.")
-                        else:
-                            st.error("Non è stato possibile estrarre date valide dal documento.")
-            except Exception as e: 
-                st.error(f"Errore di elaborazione: {e}")
+                        for d in giorni_unici:
+                            righe_arricchite.append({'Data': d, 'Parametro': 'Macchinari', 'Elemento': 'Diesel', 'Quantita': stima_macchinari})
+                            righe_arricchite.append({'Data': d, 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': stima_energia})
+                            righe_arricchite.append({'Data': d, 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': stima_acqua})
+
+                        df_cantiere_grezzo = pd.DataFrame(righe_arricchite)
+                        df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
+                        st.session_state['df_cantiere'] = df_cantiere_grezzo
+                        st.success("Modello LCA predittivo generato e consolidato correttamente.")
+            except Exception as e: st.error(f"Errore di sistema: {e}")
 
 elif fase_cantiere == "Fase di esecuzione":
     st.markdown("""
-    <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin-bottom: 20px;'>
+    <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
+        <h4>Integrazione telemetria e monitoraggio dinamico</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 0; line-height: 1.5;'>
-        Carica i dati dei materiali esportati dal BIM e i log giornalieri (telemetria grezza) dei sensori. Il sistema applicherà automaticamente le colonne di classificazione (Parametro/Elemento) ai log per allinearli al database LCI ed eseguire il matching.
+        Combina i dati strutturali estratti dal modello BIM (abachi grezzi e cronoprogramma per il calcolo delle date WBS) con i log giornalieri rilevati in cantiere. Il sistema mapperà dinamicamente le grandezze fisiche della sensoristica IoT per garantire l'allineamento deterministico con il database LCI.
         </p>
     </div>
     """, unsafe_allow_html=True)
     
     col_file1, col_file2 = st.columns(2)
     with col_file1:
-        file_mat = st.file_uploader("Materiali BIM (singolo CSV)", type=['csv'], help="Richiede colonne: Data, Parametro, Elemento, Quantita")
+        files_bim = st.file_uploader("1. Abachi BIM e cronoprogramma (file multipli)", type=['csv', 'xlsx', 'pdf'], accept_multiple_files=True, help="Documentazione per il calcolo WBS dei materiali e rifiuti")
     with col_file2:
-        files_sensori = st.file_uploader("Log sensori IoT (multipli CSV)", type=['csv'], accept_multiple_files=True, help="Supporta log da smart meter, flussimetri e GPS")
+        files_sensori = st.file_uploader("2. Log sensoristica IoT (file multipli CSV)", type=['csv'], accept_multiple_files=True, help="Supportati log da smart meter, flussimetri, tracciamento GPS e contaore macchinari")
         
     if st.button("Unifica ed elabora monitoraggio dinamico"):
         righe_reali = []
+        api_key = st.secrets.get("GEMINI_API_KEY")
         
-        if file_mat:
-            try:
-                file_mat.seek(0)
-                df_m = pd.read_csv(file_mat)
-                mappa_colonne = {}
-                for col in df_m.columns:
-                    c_low = str(col).strip().lower()
-                    if 'data' in c_low or 'date' in c_low: mappa_colonne['Data'] = col
-                    elif 'param' in c_low or 'categ' in c_low: mappa_colonne['Parametro'] = col
-                    elif 'elem' in c_low or 'material' in c_low: mappa_colonne['Elemento'] = col
-                    elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'massa' in c_low: mappa_colonne['Quantita'] = col
-                
-                if 'Data' in mappa_colonne and 'Elemento' in mappa_colonne and 'Quantita' in mappa_colonne:
-                    param_col = mappa_colonne.get('Parametro', None)
-                    for _, r in df_m.iterrows():
-                        param_val = r[param_col] if param_col else 'Materiali'
-                        righe_reali.append({'Data': str(r[mappa_colonne['Data']])[:10], 'Parametro': param_val, 'Elemento': r[mappa_colonne['Elemento']], 'Quantita': r[mappa_colonne['Quantita']]})
-            except Exception as e:
-                st.error(f"Errore lettura BIM: {e}")
+        # 1. Elaborazione Matrice BIM (Materiali e Rifiuti)
+        if files_bim:
+            if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
+            else:
+                try:
+                    client = genai.Client(api_key=api_key)
+                    with st.spinner("Allineamento matrici WBS in corso..."):
+                        df_mat = elabora_materiali_bim_con_ia(client, files_bim)
+                        if not df_mat.empty:
+                            for _, r in df_mat.iterrows():
+                                giorni_lavorativi = pd.bdate_range(start=r['Data_Inizio'], end=r['Data_Fine'])
+                                if len(giorni_lavorativi) < 1: giorni_lavorativi = [r['Data_Inizio']]
+                                q_giorn = r['Quantita_Totale'] / len(giorni_lavorativi)
+                                
+                                for d in giorni_lavorativi:
+                                    d_str = d.strftime('%Y-%m-%d')
+                                    righe_reali.append({'Data': d_str, 'Parametro': 'Materiali', 'Elemento': r['Elemento'], 'Quantita': q_giorn})
+                                    righe_reali.append({'Data': d_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_giorn * 0.15})
+                except Exception as e:
+                    st.error(f"Errore nell'elaborazione del modello BIM: {e}")
 
+        # 2. Elaborazione Modulo Sensori
         if files_sensori:
             for f in files_sensori:
                 try:
                     f.seek(0)
                     df_s = pd.read_csv(f)
                     col_lower = [c.lower() for c in df_s.columns]
-                    date_col = next((c for c in df_s.columns if 'date' in c.lower() or 'time' in c.lower() or 'dat' in c.lower()), df_s.columns[0])
+                    date_col = next((c for c in df_s.columns if 'date' in c.lower() or 'time' in c.lower() or 'dat' in c.lower() or 'timestamp' in c.lower()), df_s.columns[0])
                     
                     if any('kwh' in c for c in col_lower) or any('energy' in c for c in col_lower):
                         val_col = next(c for c in df_s.columns if 'kwh' in c.lower() or 'energy' in c.lower())
@@ -290,8 +326,8 @@ elif fase_cantiere == "Fase di esecuzione":
                         for _, r in df_agg.iterrows():
                             righe_reali.append({'Data': r[date_col], 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': r[val_col]})
                             
-                    elif any('lit' in c for c in col_lower) or any('vol' in c for c in col_lower):
-                        val_col = next(c for c in df_s.columns if 'lit' in c.lower() or 'vol' in c.lower())
+                    elif any('lit' in c for c in col_lower) or any('vol' in c for c in col_lower) or any('water' in c for c in col_lower):
+                        val_col = next(c for c in df_s.columns if 'lit' in c.lower() or 'vol' in c.lower() or 'water' in c.lower())
                         df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
                         for _, r in df_agg.iterrows():
                             righe_reali.append({'Data': r[date_col], 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': r[val_col]})
@@ -301,9 +337,15 @@ elif fase_cantiere == "Fase di esecuzione":
                         df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
                         for _, r in df_agg.iterrows():
                             righe_reali.append({'Data': r[date_col], 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': r[val_col] * 0.25})
+                    
+                    elif any('ore' in c for c in col_lower) or any('hour' in c for c in col_lower):
+                        val_col = next(c for c in df_s.columns if 'ore' in c.lower() or 'hour' in c.lower())
+                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                        for _, r in df_agg.iterrows():
+                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Macchinari', 'Elemento': 'Diesel', 'Quantita': r[val_col] * 15.0})
                             
                 except Exception as e:
-                    st.error(f"Errore lettura file sensori {f.name}: {e}")
+                    st.error(f"Errore in elaborazione file telemetrico {f.name}: {e}")
 
         if righe_reali:
             df_cantiere_reale = pd.DataFrame(righe_reali)
@@ -312,25 +354,15 @@ elif fase_cantiere == "Fase di esecuzione":
             df_cantiere_reale['Elemento'] = df_cantiere_reale.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
             
             st.session_state['df_cantiere'] = df_cantiere_reale
-            st.success("Analisi telemetrica completata. Colonne convertite e mappate.")
+            st.success("Modello dinamico unificato. Colonne convertite e mappate correttamente sul database ambientale.")
         else:
-            st.warning("Carica almeno un file per avviare il calcolo.")
+            st.warning("Eseguire il caricamento di almeno un pacchetto dati (BIM o Sensori) per generare il calcolo.")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
 
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere'].copy()
-    
-    rifiuti_presenti = (df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'rifiuti').any()
-    if not rifiuti_presenti:
-        mat_mask = df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'materiali'
-        if mat_mask.any():
-            df_sfrido = df_cantiere[mat_mask].copy()
-            df_sfrido['Parametro'] = 'Rifiuti'
-            df_sfrido['Quantita'] = df_sfrido['Quantita'] * 0.15 
-            df_sfrido['Elemento'] = 'Inerti / Macerie di demolizione'
-            df_cantiere = pd.concat([df_cantiere, df_sfrido], ignore_index=True)
     
     df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='mixed', errors='coerce')
     
@@ -352,7 +384,7 @@ if 'df_cantiere' in st.session_state:
     df_completo['CO2_Totale_kg'] = df_completo['Quantita'] * df_completo['Fattore_Emissione']
     
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-    st.subheader("Configurazione temporale")
+    st.subheader("Configurazione temporale dell'analisi")
     
     min_date = df_completo['Data_dt'].min().date() if not df_completo.empty and pd.notna(df_completo['Data_dt'].min()) else date.today()
     max_date = df_completo['Data_dt'].max().date() if not df_completo.empty and pd.notna(df_completo['Data_dt'].max()) else date.today()
@@ -370,7 +402,7 @@ if 'df_cantiere' in st.session_state:
     if df_filtrato.empty: 
         st.info("La selezione temporale non presenta dati elaborabili.")
     else:
-        modo_visualizzazione = st.selectbox("Modalità di visualizzazione grafica", ["Distribuzione temporale standard", "Analisi di frequenza (KDE)", "Andamento (media mobile)", "Andamento (media fissa)"], index=0)
+        modo_visualizzazione = st.selectbox("Modalità di visualizzazione grafica", ["Distribuzione temporale", "Analisi di frequenza (KDE)", "Andamento (media mobile)", "Riferimento media fissa"], index=0)
 
         def genera_figura(df_dat, x_col, y_col, titolo, colore_base):
             df_dat = df_dat.copy()
@@ -420,14 +452,14 @@ if 'df_cantiere' in st.session_state:
             st.download_button("Esporta dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
-        st.subheader("Analisi disaggregata per voci")
+        st.subheader("Analisi disaggregata per voci strutturali")
         col_grafici = st.columns(2)
         for idx, param in enumerate(df_filtrato['Parametro_Title'].dropna().unique()):
             df_p = df_filtrato[df_filtrato['Parametro_Title'] == param].groupby('Data')['CO2_Totale_kg'].sum().reset_index()
             with col_grafici[idx % 2]:
                 st.plotly_chart(genera_figura(df_p, 'Data', 'CO2_Totale_kg', param, colori_parametri.get(param, '#4b5563')), use_container_width=True)
 
-        with st.expander("Ispezione matrice dati"):
+        with st.expander("Ispezione matrice dati consolidata"):
             st.dataframe(df_filtrato.drop(columns=['Data_dt', 'Parametro_Title', 'Parametro_match', 'Elemento_match'], errors='ignore'), use_container_width=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
