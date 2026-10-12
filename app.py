@@ -14,14 +14,16 @@ import streamlit as st
 import streamlit.components.v1 as components
 import json
 
-def browser_log(messaggio):
-    messaggio_json = json.dumps(str(messaggio))
-    components.html(
-    f""" <script>
-    console.log("[DEBUG Python → Browser]", {messaggio_json}); </script>
-    """,
-    height=0,
-    )
+def browser_log(messaggio, dati=None):
+    with st.expander("🔍 Debug applicazione", expanded=True):
+        st.write("Messaggio:", messaggio)
+
+    if dati is not None:
+        if isinstance(dati, pd.DataFrame):
+            st.write("Dimensioni:", dati.shape)
+            st.dataframe(dati)
+        else:
+            st.write("Valore:", dati)
 
 
 
