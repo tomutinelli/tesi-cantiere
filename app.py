@@ -11,7 +11,7 @@ from google import genai
 from google.genai import types
 
 st.set_page_config(page_title="EcoSite Tracker | Analisi LCA", layout="wide")
-s
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
