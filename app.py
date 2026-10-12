@@ -128,7 +128,7 @@ def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
         if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
         if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
         if 'inerti' in e_str or 'sabbia' in e_str or 'ghiaia' in e_str or 'misto' in e_str: return 'Inerti'
-        if 'asfalto' in e_str or 'bitume' in e_str or 'strada' in e_str or 'Binder' in e_str or 'usura' in e_str: return 'Asfalto/Bitume'
+        if 'asfalto' in e_str or 'bitume' in e_str or 'strada' in e_str or 'binder' in e_str or 'usura' in e_str: return 'Asfalto/Bitume'
         if 'legno' in e_str: return 'Legno'
         if 'vetro' in e_str: return 'Vetro'
         if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
@@ -144,6 +144,7 @@ def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
     if match: return match[0]
     return elemento_grezzo
 
+# FUNZIONE PARSER ROBUSTA
 def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
     tutti_materiali = []
     
@@ -151,39 +152,52 @@ def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
         if f.name.endswith('.csv') and 'sensor' not in f.name.lower():
             try:
                 f.seek(0)
-                df_temp = pd.read_csv(f, header=1)
-                df_temp.columns = [str(c).strip() for c in df_temp.columns]
+                # Tenta lettura diretta
+                df_temp = pd.read_csv(f)
+                cols_low = [str(c).lower() for c in df_temp.columns]
                 
-                col_wbs = next((c for c in df_temp.columns if 'wbs' in c.lower()), df_temp.columns[0])
-                col_nome = next((c for c in df_temp.columns if 'nome' in c.lower() or 'material' in c.lower()), None)
-                col_massa = next((c for c in df_temp.columns if 'massa' in c.lower()), df_temp.columns[-1])
-                
-                current_wbs = 'Ss_20_20'
-                current_group = 'Materiale Strutturale'
-                
-                for _, row in df_temp.iterrows():
-                    wbs_val = str(row[col_wbs]).strip() if pd.notna(row[col_wbs]) else ""
-                    nome_val = str(row[col_nome]).strip() if col_nome and pd.notna(row[col_nome]) else ""
-                    massa_str = str(row[col_massa]).replace(' kg', '').replace(',', '').strip()
-                    
-                    if wbs_val.startswith('Ss_') or wbs_val.startswith('Pr_'):
-                        current_wbs = wbs_val
-                    
-                    if 'Pavimento:' in wbs_val or 'TOT:' in wbs_val:
-                        current_group = wbs_val
-                        continue
-                        
-                    if massa_str.replace('.', '', 1).isdigit():
-                        massa_val = float(massa_str)
-                        if massa_val > 0:
-                            elem_name = nome_val if nome_val and nome_val != 'nan' else (current_group if current_group else 'Materiale da costruzione')
-                            tutti_materiali.append({
-                                'WBS': current_wbs,
-                                'Nome': elem_name,
-                                'Massa': massa_val
-                            })
+                # Se la prima riga è 'Unnamed', prova a usare la riga successiva come header
+                if 'unnamed' in cols_low[0] or (not any('wbs' in c for c in cols_low) and not any('massa' in c for c in cols_low)):
+                    f.seek(0)
+                    df_temp = pd.read_csv(f, header=1)
             except Exception:
-                pass
+                continue
+
+            df_temp.columns = [str(c).strip() for c in df_temp.columns]
+            
+            # Identificazione dinamica delle colonne
+            col_wbs = next((c for c in df_temp.columns if 'wbs' in c.lower()), None)
+            col_nome = next((c for c in df_temp.columns if 'nome' in c.lower() or 'material' in c.lower()), None)
+            col_massa = next((c for c in df_temp.columns if 'massa' in c.lower()), None)
+            
+            if not col_wbs or not col_massa:
+                continue # Salta se non ci sono le colonne WBS e Massa necessarie
+            
+            current_wbs = 'Ss_20_20'
+            current_group = 'Materiale Strutturale'
+            
+            for _, row in df_temp.iterrows():
+                wbs_val = str(row[col_wbs]).strip() if pd.notna(row[col_wbs]) else ""
+                nome_val = str(row[col_nome]).strip() if col_nome and pd.notna(row[col_nome]) else ""
+                massa_str = str(row[col_massa]).replace(' kg', '').replace(',', '').strip()
+                
+                if wbs_val.startswith('Ss_') or wbs_val.startswith('Pr_'):
+                    current_wbs = wbs_val
+                
+                if 'Pavimento:' in wbs_val or 'TOT:' in wbs_val:
+                    current_group = wbs_val
+                    continue
+                    
+                # Verifica che sia un numero calcolabile
+                if massa_str.replace('.', '', 1).isdigit():
+                    massa_val = float(massa_str)
+                    if massa_val > 0:
+                        elem_name = nome_val if nome_val and nome_val != 'nan' else (current_group if current_group else 'Materiale generico')
+                        tutti_materiali.append({
+                            'WBS': current_wbs,
+                            'Nome': elem_name,
+                            'Massa': massa_val
+                        })
 
     df_mater_grezzo = pd.DataFrame(tutti_materiali)
     if df_mater_grezzo.empty:
@@ -202,19 +216,21 @@ def elabora_abachi_locali(lista_file_abachi, client_ia, file_cronoprogramma):
     Analizza il cronoprogramma e restituisci ESCLUSIVAMENTE un file CSV puro con queste 3 colonne esatte:
     WBS,Data_Inizio,Data_Fine
     
-    Estrai le date per ogni codice WBS presente. Formato date: AAAA-MM-GG. Nessun commento o markdown, solo CSV.
+    Estrai le date per ogni codice WBS presente. Formato date: AAAA-MM-GG. Nessun commento, solo CSV.
     """
     contents.append(prompt)
     
     csv_date = ""
+    # Ho corretto il modello qui: gemini-1.5-flash è quello funzionante
     for _ in range(3):
         try:
-            res = client_ia.models.generate_content(model='gemini-3.6-flash', contents=contents)
+            res = client_ia.models.generate_content(model='gemini-1.5-flash', contents=contents)
             csv_date = res.text.strip()
             break
         except Exception:
             time.sleep(3)
             
+    # Fallback di sicurezza in caso di API non responsiva
     mappa_date_default = {
         'Ss_20_20': ('2024-10-14', '2025-02-14'),
         'Pr_20_31_16_92': ('2025-02-17', '2025-08-01'),
@@ -274,7 +290,7 @@ if "**Fase di progettazione**" in fase_cantiere:
     <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
         <h4>Analisi predittiva</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 10px; line-height: 1.5;'>
-        Carica i tuoi abachi in formato CSV e il cronoprogramma in PDF/XLSX/CSV. Inserisci le stime giornaliere per macchinari, energia e acqua.
+        Carica gli abachi in CSV e il cronoprogramma in PDF. Inserisci le stime per macchinari, energia e acqua.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -340,7 +356,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
     <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
         <h4>Monitoraggio dinamico con sensoristica IoT</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 0; line-height: 1.5;'>
-        Carica tutto insieme (abachi CSV, cronoprogramma in PDF/XLSX/CSV e log dei sensori CSV). Il sistema calcolerà i materiali con la stessa identica logica della progettazione e integrerà in automatico i dati reali dei sensori IoT.
+        Carica tutto insieme (abachi CSV, cronoprogramma in PDF/XLSX/CSV e log dei sensori CSV). Il sistema calcolerà i materiali con la stessa identica logica della progettazione e integrerà i dati reali IoT.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -357,14 +373,18 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                 try:
                     client = genai.Client(api_key=api_key)
                     with st.spinner("Elaborazione abachi materiali BIM e lettura log sensori IoT in corso..."):
-                        # 1. CALCOLO MATERIALI IDENTICO ALLA PROGETTAZIONE
+                        # 1. ESTRAZIONE MATERIALI (IDENTICA A PROGETTAZIONE)
                         lista_abachi = [f for f in files_unificati_esec if f.name.endswith('.csv') and 'sensor' not in f.name.lower() and 'cronoprogramma' not in f.name.lower()]
+                        
                         file_gantt = next((f for f in files_unificati_esec if f.name.endswith('.pdf') or f.name.endswith('.xlsx') or 'cronoprogramma' in f.name.lower()), None)
                         if not file_gantt and files_unificati_esec:
-                            file_gantt = files_unificati_esec[0] # fallback
+                            file_gantt = files_unificati_esec[0] # Fallback
                         
                         df_mat = elabora_abachi_locali(lista_abachi, client, file_gantt)
-                        if not df_mat.empty:
+                        
+                        if df_mat.empty:
+                            st.error("Nessun materiale estratto. Verifica i file CSV degli abachi caricati.")
+                        else:
                             for _, r in df_mat.iterrows():
                                 giorni_lavorativi = pd.bdate_range(start=r['Data_Inizio'], end=r['Data_Fine'])
                                 if len(giorni_lavorativi) < 1: giorni_lavorativi = [pd.to_datetime(r['Data_Inizio'])]
@@ -378,7 +398,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_giorn/28000)*30*0.25})
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
 
-                        # 2. LETTURA SENSORI IOT REALI (Energia, Acqua, Trasporti/Macchinari)
+                        # 2. INTEGRAZIONE SENSORI IOT (Energia, Acqua, Macchinari)
                         for f in files_unificati_esec:
                             if 'sensor' in f.name.lower() or (f.name.endswith('.csv') and f not in lista_abachi and f != file_gantt):
                                 try:
@@ -418,9 +438,9 @@ elif "**Fase di esecuzione**" in fase_cantiere:
             df_cantiere_reale['Elemento'] = df_cantiere_reale.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
             
             st.session_state['df_cantiere'] = df_cantiere_reale
-            st.success("Monitoraggio dinamico unificato con successo (Materiali BIM calcolati come in progetto + Sensori IoT reali).")
-        else:
-            st.warning("Carica i file necessari per avviare il calcolo.")
+            st.success("Monitoraggio dinamico unificato con successo (Materiali BIM + Sensori IoT reali).")
+        elif not df_mat.empty:
+            st.warning("Materiali calcolati, ma nessun dato sensore rilevato. Verifica i CSV dei sensori.")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
