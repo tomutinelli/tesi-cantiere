@@ -5,10 +5,10 @@ import plotly.graph_objects as go
 from datetime import datetime, date
 import os
 import io
-import time
-from difflib import get_close_matches
-from google import genai
-from google.genai import types
+import re
+
+# Rimosse le librerie google genai
+# PyPDF2 verrà importato localmente nella funzione per gestire il cronoprogramma
 
 st.set_page_config(page_title="EcoSite Tracker | Analisi LCA", layout="wide")
 
@@ -21,10 +21,6 @@ st.markdown("""
         color: #1f2937;
         background-color: #f9fafb;
     }
-
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
 
     div.minimal-card {
         background-color: #ffffff !important;
@@ -42,29 +38,8 @@ st.markdown("""
     .stRadio label, .stNumberInput label, .stDateInput label, .stFileUploader label, .stSelectbox label {
         font-weight: 500; font-size: 0.9rem; color: #374151;
     }
-    
-    .stRadio div[role="radiogroup"] {
-        background-color: #ffffff; padding: 16px; border-radius: 4px; border: 1px solid #e5e7eb;
-    }
-
-    .custom-dl-btn {
-        text-decoration: none !important; background-color: #ffffff !important;
-        border: 1px solid #d1d5db !important; color: #374151 !important;
-        padding: 0.5rem 1rem !important; border-radius: 4px !important;
-        font-size: 0.85rem !important; font-weight: 500 !important;
-        display: block !important; text-align: center !important;
-        width: 100% !important; margin-top: 8px !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    
-    .custom-dl-btn:hover {
-        border-color: #9ca3af !important; background-color: #f3f4f6 !important;
-        color: #111827 !important;
-    }
 </style>
 """, unsafe_allow_html=True)
-
-st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
 @st.cache_data
 def carica_database_lci(percorso_file):
@@ -115,15 +90,15 @@ if df_inventario is None or df_inventario.empty:
     st.stop()
 
 def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
-    p_str = str(parametro).strip()
+    p_str = str(parametro).strip().lower()
     e_str = str(elemento_grezzo).strip().lower()
-    voci_disponibili = df_inv[df_inv['Parametro'].str.lower() == p_str.lower()]['Elemento'].tolist()
+    voci_disponibili = df_inv[df_inv['Parametro'].str.lower() == p_str]['Elemento'].tolist()
     if not voci_disponibili: voci_disponibili = df_inv['Elemento'].tolist()
         
     for v in voci_disponibili:
         if v.lower() in e_str or e_str in v.lower(): return v
             
-    if p_str.lower() == 'materiali':
+    if p_str == 'materiali':
         if 'calcestruzzo' in e_str or 'cls' in e_str: return 'Calcestruzzo'
         if 'acciaio' in e_str or 'ferro' in e_str: return 'Acciaio'
         if 'laterizio' in e_str or 'mattone' in e_str: return 'Laterizio'
@@ -132,82 +107,137 @@ def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
         if 'legno' in e_str: return 'Legno'
         if 'vetro' in e_str: return 'Vetro'
         if 'isolante' in e_str or 'lana' in e_str or 'eps' in e_str: return 'Isolante EPS'
-    elif p_str.lower() == 'rifiuti':
+    elif p_str == 'rifiuti':
         if 'scavo' in e_str or 'terra' in e_str: return 'Inerti / Macerie di demolizione'
         if 'calcestruzzo' in e_str: return 'Calcestruzzo di risulta'
         if 'acciaio' in e_str or 'ferro' in e_str: return 'Metallo / Acciaio di scarto'
-    elif p_str.lower() in ['trasporti', 'macchinari']:
+    elif p_str in ['trasporti', 'macchinari']:
         if 'diesel' in e_str or 'gasolio' in e_str: return 'Diesel'
         if 'benzina' in e_str or 'petrol' in e_str: return 'Petrol'
         
+    from difflib import get_close_matches
     match = get_close_matches(str(elemento_grezzo), voci_disponibili, n=1, cutoff=0.1)
     if match: return match[0]
     return elemento_grezzo
 
-def elabora_materiali_bim_con_ia(client_ia, lista_file):
-    contents = []
+# ====================================================================
+# NUOVO MOTORE DETERMINISTICO DI MATCHING (SENZA INTELLIGENZA ARTIFICIALE)
+# ====================================================================
+def elabora_materiali_bim_offline(lista_file):
+    file_gantt = None
+    file_abachi = []
+    
+    # 1. Separazione dei file (Cronoprogramma vs Abachi)
     for f in lista_file:
         f.seek(0)
-        ext = f.name.split('.')[-1].lower()
-        mime = 'application/pdf' if ext == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if ext in ['xlsx', 'xls'] else 'text/plain'
-        contents.append(types.Part.from_bytes(data=f.getvalue(), mime_type=mime))
-    
-    prompt = """
-    Sei un esperto BIM e analista dati. Analizza i file allegati: gli abachi dei materiali (esportati da Revit) e il cronoprogramma di cantiere.
-    Il tuo compito è:
-    1. Identificare i codici WBS negli abachi e la relativa massa totale in kg del materiale.
-    2. Trovare gli stessi codici WBS (o fortemente simili) nel cronoprogramma per determinare la data di inizio e fine dell'attività lavorativa associata.
-    3. Restituire in output ESCLUSIVAMENTE un file in formato CSV puro con le seguenti 5 colonne esatte, separate da virgola:
-    Parametro,Elemento,Quantita_Totale,Data_Inizio,Data_Fine
+        nome = f.name.lower()
+        if 'crono' in nome or 'gantt' in nome or 'programma' in nome:
+            file_gantt = f
+        else:
+            file_abachi.append(f)
+            
+    if not file_gantt:
+        st.error("Nessun cronoprogramma trovato. Assicurati che il file abbia 'crono' o 'gantt' nel nome.")
+        return pd.DataFrame()
+    if not file_abachi:
+        st.error("Nessun abaco trovato.")
+        return pd.DataFrame()
 
-    Istruzioni di compilazione:
-    - Parametro: inserire sempre la stringa "Materiali".
-    - Elemento: inserire il nome del materiale come indicato nell'abaco (es. "Acciaio S355 J2W").
-    - Quantita_Totale: valore numerico assoluto con punto decimale (es. 1382813.97). Non includere unità di misura.
-    - Data_Inizio: converti la data del cronoprogramma nel formato internazionale AAAA-MM-GG.
-    - Data_Fine: converti la data del cronoprogramma nel formato internazionale AAAA-MM-GG.
-
-    Non inserire commenti, note o formattazione markdown. Restituisci unicamente la tabella CSV.
-    """
-    contents.append(prompt)
+    # 2. Parsing del Cronoprogramma
+    wbs_dates = {}
+    testo_gantt = ""
+    ext_gantt = file_gantt.name.split('.')[-1].lower()
     
-    csv_out = ""
-    ultimo_errore = ""
-    
-    for tentativo in range(3):
+    if ext_gantt == 'pdf':
         try:
-            res = client_ia.models.generate_content(model='gemini-1.5-flash', contents=contents)
-            csv_out = res.text.strip()
-            break
+            import PyPDF2
+            reader = PyPDF2.PdfReader(file_gantt)
+            for page in reader.pages:
+                testo_gantt += page.extract_text() + "\n"
+        except ImportError:
+            st.error("Libreria PyPDF2 non trovata. Esegui 'pip install PyPDF2' nel terminale.")
+            return pd.DataFrame()
         except Exception as e:
-            ultimo_errore = str(e)
-            time.sleep(5)
+            st.error(f"Errore nella lettura del PDF del cronoprogramma: {e}")
+            return pd.DataFrame()
+    else:
+        try:
+            testo_gantt = file_gantt.getvalue().decode('utf-8', errors='ignore')
+        except: pass
             
-    if not csv_out:
-        st.error(f"⚠️ Errore di connessione API Gemini: {ultimo_errore}")
+    # Regex per intercettare pattern WBS (es. Ss_20_20, Pr_20_31_16_92) e date
+    linee = testo_gantt.split('\n')
+    regex_wbs = re.compile(r'([A-Za-z]+(?:_\d+)+)')
+    regex_data = re.compile(r'(\d{2}/\d{2}/\d{2,4}|\d{4}-\d{2}-\d{2})')
+    
+    for linea in linee:
+        wbs_match = regex_wbs.search(linea)
+        date_matches = regex_data.findall(linea)
+        if wbs_match and len(date_matches) >= 2:
+            wbs_code = wbs_match.group(1).lower().strip()
+            wbs_dates[wbs_code] = (date_matches[0], date_matches[1])
+
+    if not wbs_dates:
+        st.warning("Il sistema non è riuscito a rilevare codici WBS e Date nel cronoprogramma. Controlla il formato.")
         return pd.DataFrame()
-    
-    if csv_out.startswith("```"): 
-        csv_out = csv_out.split("```")[1].replace("csv\n", "").strip()
-    elif "Parametro,Elemento" in csv_out: 
-        csv_out = csv_out[csv_out.find("Parametro,Elemento"):]
-    
-    try:
-        df = pd.read_csv(io.StringIO(csv_out))
-        df.columns = df.columns.str.strip()
-        df['Data_Inizio'] = pd.to_datetime(df['Data_Inizio'], format='mixed', dayfirst=True, errors='coerce')
-        df['Data_Fine'] = pd.to_datetime(df['Data_Fine'], format='mixed', dayfirst=True, errors='coerce')
-        df['Quantita_Totale'] = pd.to_numeric(df['Quantita_Totale'], errors='coerce').fillna(0)
-        
-        df_pulito = df.dropna(subset=['Data_Inizio', 'Data_Fine'])
-        
-        if df_pulito.empty and not df.empty:
-            st.warning("L'IA ha letto i documenti ma non ha trovato corrispondenze esatte tra i codici WBS degli abachi e quelli del cronoprogramma, oppure le date non sono state lette correttamente.")
+
+    # 3. Parsing degli Abachi (Materiali e Quantità)
+    df_totale_abachi = pd.DataFrame()
+    for f_abaco in file_abachi:
+        ext = f_abaco.name.split('.')[-1].lower()
+        try:
+            if ext in ['csv', 'txt']:
+                df = pd.read_csv(f_abaco, sep=None, engine='python')
+            elif ext in ['xls', 'xlsx']:
+                df = pd.read_excel(f_abaco)
+            else: continue
             
-        return df_pulito
-    except Exception as e:
-        st.error(f"⚠️ Errore di validazione del CSV generato dall'IA: {e}")
+            # Ricerca flessibile delle colonne pertinenti
+            wbs_col = next((c for c in df.columns if 'wbs' in str(c).lower() or 'codice' in str(c).lower() or 'code' in str(c).lower()), None)
+            mat_col = next((c for c in df.columns if 'material' in str(c).lower() or 'famiglia' in str(c).lower() or 'tipo' in str(c).lower() or 'descrizione' in str(c).lower() or 'nome' in str(c).lower()), None)
+            qta_col = next((c for c in df.columns if 'massa' in str(c).lower() or 'peso' in str(c).lower() or 'quant' in str(c).lower() or 'kg' in str(c).lower() or 'vol' in str(c).lower()), None)
+            
+            if wbs_col and mat_col and qta_col:
+                df_temp = pd.DataFrame({
+                    'WBS': df[wbs_col].astype(str),
+                    'Elemento': df[mat_col].astype(str),
+                    'Quantita': pd.to_numeric(df[qta_col].astype(str).str.replace(',','.'), errors='coerce').fillna(0)
+                })
+                df_totale_abachi = pd.concat([df_totale_abachi, df_temp], ignore_index=True)
+        except Exception as e:
+            st.error(f"Errore nella lettura dell'abaco {f_abaco.name}: {e}")
+            
+    if df_totale_abachi.empty:
+        st.warning("Impossibile estrarre dati dagli abachi. Assicurati che contengano colonne per WBS, Materiale e Quantità/Massa.")
         return pd.DataFrame()
+
+    # 4. Matching Deterministico WBS -> Cronoprogramma
+    risultati = []
+    for _, row in df_totale_abachi.iterrows():
+        wbs_abaco_raw = row['WBS']
+        wbs_abaco_clean_match = regex_wbs.search(wbs_abaco_raw)
+        wbs_abaco = wbs_abaco_clean_match.group(1).lower().strip() if wbs_abaco_clean_match else wbs_abaco_raw.lower().strip()
+        
+        # Cerca corrispondenza nel dizionario delle date
+        for wbs_gantt, (d_in, d_out) in wbs_dates.items():
+            if wbs_gantt in wbs_abaco or wbs_abaco in wbs_gantt:
+                risultati.append({
+                    'Parametro': 'Materiali',
+                    'Elemento': row['Elemento'],
+                    'Quantita_Totale': row['Quantita'],
+                    'Data_Inizio': d_in,
+                    'Data_Fine': d_out
+                })
+                break
+                
+    df_out = pd.DataFrame(risultati)
+    if df_out.empty:
+        st.warning("Nessun match trovato tra i codici WBS degli abachi e quelli del cronoprogramma.")
+        return pd.DataFrame()
+        
+    df_out['Data_Inizio'] = pd.to_datetime(df_out['Data_Inizio'], format='mixed', dayfirst=True, errors='coerce')
+    df_out['Data_Fine'] = pd.to_datetime(df_out['Data_Fine'], format='mixed', dayfirst=True, errors='coerce')
+    return df_out.dropna(subset=['Data_Inizio', 'Data_Fine'])
 
 
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
@@ -225,9 +255,9 @@ fase_cantiere = st.radio(
 if "**Fase di progettazione**" in fase_cantiere:
     st.markdown("""
     <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
-        <h4>Analisi predittiva</h4>
+        <h4>Analisi predittiva (Offline Mode)</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 10px; line-height: 1.5;'>
-        Questa modalità calcola l'impronta carbonica a livello previsionale. Il sistema estrae e distribuisce temporalmente le masse dei materiali dagli abachi BIM, calcola la produzione di rifiuti al 15% di sfrido e i relativi trasporti, e infine somma le stime operative inserite nei campi sottostanti.
+        Calcolo impronta carbonica tramite algoritmo deterministico. Esegue il matching diretto dei codici WBS tra cronoprogramma e abachi senza IA. La stima inserita per Macchinari, Energia e Acqua verrà distribuita equamente su tutti i giorni estratti dal programma lavori.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -243,21 +273,20 @@ if "**Fase di progettazione**" in fase_cantiere:
     files_unificati = st.file_uploader("Documentazione di cantiere: abachi e cronoprogramma (file multipli)", type=['pdf', 'txt', 'xlsx', 'csv'], accept_multiple_files=True)
 
     if st.button("Elabora modello predittivo"):
-        api_key = st.secrets.get("GEMINI_API_KEY")
-        if not api_key: st.error("Chiave API mancante nella configurazione.")
-        elif not files_unificati: st.warning("È necessario caricare la documentazione per avviare il matching.")
+        if not files_unificati: 
+            st.warning("È necessario caricare la documentazione per avviare il matching.")
         else:
             try:
-                client = genai.Client(api_key=api_key)
-                with st.spinner("Estrazione semantica ed elaborazione matrici WBS in corso..."):
-                    df_estratti = elabora_materiali_bim_con_ia(client, files_unificati)
+                with st.spinner("Estrazione semantica ed elaborazione matrici WBS (Algoritmo Deterministico)..."):
+                    df_estratti = elabora_materiali_bim_offline(files_unificati)
                     
                     if df_estratti.empty:
-                        st.error("L'elaborazione non ha prodotto dati validi. Verifica l'integrità dei documenti.")
+                        st.error("L'elaborazione non ha prodotto dati validi. Verifica l'integrità dei documenti e dei WBS.")
                     else:
                         righe_arricchite = []
                         giorni_unici = set()
                         
+                        # 1. Distribuzione dei materiali sulle date di competenza WBS
                         for index, row in df_estratti.iterrows():
                             giorni_lavorativi = pd.bdate_range(start=row['Data_Inizio'], end=row['Data_Fine'])
                             if len(giorni_lavorativi) < 1: giorni_lavorativi = [row['Data_Inizio']]
@@ -270,12 +299,13 @@ if "**Fase di progettazione**" in fase_cantiere:
                                 # Allocazione materiale
                                 righe_arricchite.append({'Data': data_str, 'Parametro': 'Materiali', 'Elemento': row['Elemento'], 'Quantita': quantita_giorn})
                                 
-                                # Sfridi e logistica
+                                # Sfridi e logistica collegati al materiale
                                 q_rif = quantita_giorn * 0.15
                                 righe_arricchite.append({'Data': data_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
                                 righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (quantita_giorn/28000)*30*0.25})
                                 righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
 
+                        # 2. Distribuzione SCELTE DELL'UTENTE (Macchinari, Energia, Acqua) spalmata su tutti i giorni attivi
                         for d in giorni_unici:
                             righe_arricchite.append({'Data': d, 'Parametro': 'Macchinari', 'Elemento': 'Diesel', 'Quantita': stima_macchinari})
                             righe_arricchite.append({'Data': d, 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': stima_energia})
@@ -284,54 +314,45 @@ if "**Fase di progettazione**" in fase_cantiere:
                         df_cantiere_grezzo = pd.DataFrame(righe_arricchite)
                         df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
                         st.session_state['df_cantiere'] = df_cantiere_grezzo
-                        st.success("Modello LCA predittivo generato e consolidato correttamente.")
+                        st.success("Modello LCA predittivo generato e consolidato con successo.")
             except Exception as e: st.error(f"Errore di sistema: {e}")
 
 elif "**Fase di esecuzione**" in fase_cantiere:
     st.markdown("""
     <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
         <h4>Integrazione telemetria e monitoraggio dinamico</h4>
-        <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 0; line-height: 1.5;'>
-        Combina i dati strutturali estratti dal modello BIM (abachi grezzi e cronoprogramma per il calcolo delle date WBS) con i log giornalieri rilevati in cantiere. Il sistema calcolerà in automatico materiali, sfridi e trasporti standardizzati, mappando contemporaneamente i dati reali della sensoristica IoT per garantire l'allineamento deterministico con il database LCI.
-        </p>
     </div>
     """, unsafe_allow_html=True)
     
     col_file1, col_file2 = st.columns(2)
     with col_file1:
-        files_bim = st.file_uploader("1. Abachi BIM e cronoprogramma (file multipli)", type=['csv', 'xlsx', 'pdf'], accept_multiple_files=True, help="Documentazione per il calcolo WBS dei materiali e logistica base")
+        files_bim = st.file_uploader("1. Abachi BIM e cronoprogramma", type=['csv', 'xlsx', 'pdf'], accept_multiple_files=True)
     with col_file2:
-        files_sensori = st.file_uploader("2. Log sensoristica IoT (file multipli CSV)", type=['csv'], accept_multiple_files=True, help="Supportati log da smart meter, flussimetri, tracciamento GPS e contaore macchinari")
+        files_sensori = st.file_uploader("2. Log sensoristica IoT (CSV)", type=['csv'], accept_multiple_files=True)
         
     if st.button("Unifica ed elabora monitoraggio dinamico"):
         righe_reali = []
-        api_key = st.secrets.get("GEMINI_API_KEY")
         
-        # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)
+        # 1. Elaborazione Matrice BIM
         if files_bim:
-            if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
-            else:
-                try:
-                    client = genai.Client(api_key=api_key)
-                    with st.spinner("Allineamento matrici WBS in corso..."):
-                        df_mat = elabora_materiali_bim_con_ia(client, files_bim)
-                        if not df_mat.empty:
-                            for _, r in df_mat.iterrows():
-                                giorni_lavorativi = pd.bdate_range(start=r['Data_Inizio'], end=r['Data_Fine'])
-                                if len(giorni_lavorativi) < 1: giorni_lavorativi = [r['Data_Inizio']]
-                                q_giorn = r['Quantita_Totale'] / len(giorni_lavorativi)
-                                
-                                for d in giorni_lavorativi:
-                                    d_str = d.strftime('%Y-%m-%d')
-                                    # Allocazione materiale
-                                    righe_reali.append({'Data': d_str, 'Parametro': 'Materiali', 'Elemento': r['Elemento'], 'Quantita': q_giorn})
-                                    # Sfridi e logistica
-                                    q_rif = q_giorn * 0.15
-                                    righe_reali.append({'Data': d_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
-                                    righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_giorn/28000)*30*0.25})
-                                    righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
-                except Exception as e:
-                    st.error(f"Errore nell'elaborazione del modello BIM: {e}")
+            try:
+                with st.spinner("Allineamento matrici WBS (Offline Mode)..."):
+                    df_mat = elabora_materiali_bim_offline(files_bim)
+                    if not df_mat.empty:
+                        for _, r in df_mat.iterrows():
+                            giorni_lavorativi = pd.bdate_range(start=r['Data_Inizio'], end=r['Data_Fine'])
+                            if len(giorni_lavorativi) < 1: giorni_lavorativi = [r['Data_Inizio']]
+                            q_giorn = r['Quantita_Totale'] / len(giorni_lavorativi)
+                            
+                            for d in giorni_lavorativi:
+                                d_str = d.strftime('%Y-%m-%d')
+                                righe_reali.append({'Data': d_str, 'Parametro': 'Materiali', 'Elemento': r['Elemento'], 'Quantita': q_giorn})
+                                q_rif = q_giorn * 0.15
+                                righe_reali.append({'Data': d_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
+                                righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_giorn/28000)*30*0.25})
+                                righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
+            except Exception as e:
+                st.error(f"Errore nell'elaborazione del modello BIM: {e}")
 
         # 2. Elaborazione Modulo Sensori
         if files_sensori:
@@ -376,11 +397,12 @@ elif "**Fase di esecuzione**" in fase_cantiere:
             df_cantiere_reale['Elemento'] = df_cantiere_reale.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
             
             st.session_state['df_cantiere'] = df_cantiere_reale
-            st.success("Modello dinamico unificato. Colonne convertite e mappate correttamente sul database ambientale.")
+            st.success("Modello dinamico unificato offline.")
         else:
-            st.warning("Eseguire il caricamento di almeno un pacchetto dati (BIM o Sensori) per generare il calcolo.")
+            st.warning("Eseguire il caricamento di almeno un pacchetto dati per generare il calcolo.")
 
 st.markdown("</div>", unsafe_allow_html=True)
+
 
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere'].copy()
