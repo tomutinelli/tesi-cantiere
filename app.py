@@ -14,6 +14,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import json
 
+ # !!!!!!!!!!!!!!!!!
 def browser_log(messaggio, dati=None):
     with st.expander("🔍 Debug applicazione", expanded=True):
         st.write("Messaggio:", messaggio)
@@ -309,7 +310,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         api_key = st.secrets.get("GEMINI_API_KEY")
         
         # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)
-        browser_log(f"files_bim: {files_bim}")
+        browser_log(f"files_bim: {files_bim}") # !!!!!!!!!!!!!!!!!
         
         if files_bim:
             if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
@@ -337,6 +338,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                     st.error(f"Errore nell'elaborazione del modello BIM: {e}")
         
         # 2. Elaborazione Modulo Sensori
+        browser_log(f"files_sensori: {files_sensori}") # !!!!!!!!!!!!!!!!!
         if files_sensori:
             for f in files_sensori:
                 try:
