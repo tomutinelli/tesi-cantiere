@@ -309,9 +309,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         righe_reali = []
         api_key = st.secrets.get("GEMINI_API_KEY")
         
-        # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)
-        browser_log(f"files_bim: {files_bim}") # !!!!!!!!!!!!!!!!!
-        
+        # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)        
         if files_bim:
             if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
             else:
@@ -338,7 +336,6 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                     st.error(f"Errore nell'elaborazione del modello BIM: {e}")
         
         # 2. Elaborazione Modulo Sensori
-        browser_log(f"files_sensori: {files_sensori}") # !!!!!!!!!!!!!!!!!
         if files_sensori:
             for f in files_sensori:
                 try:
@@ -389,7 +386,9 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 
 if 'df_cantiere' in st.session_state:
+
     df_cantiere = st.session_state['df_cantiere'].copy()
+    browser_log("Dati cantiere caricati", df_cantiere)
     
     df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='mixed', errors='coerce')
     
