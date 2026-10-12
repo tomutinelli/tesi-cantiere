@@ -294,25 +294,39 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         
         # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)
         if files_bim:
-            if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
+            api_key = st.secrets.get("GEMINI_API_KEY")
+            if not api_key: st.error("Chiave API mancante nella configurazione.")
+            elif not files_unificati: st.warning("È necessario caricare la documentazione per avviare il matching.")
             else:
                 try:
                     client = genai.Client(api_key=api_key)
-                    with st.spinner("Allineamento matrici WBS in corso..."):
-                        df_mat = elabora_materiali_bim_con_ia(client, files_bim)
-                        if not df_mat.empty:
-                            for _, r in df_mat.iterrows():
-                                giorni_lavorativi = pd.bdate_range(start=r['Data_Inizio'], end=r['Data_Fine'])
-                                if len(giorni_lavorativi) < 1: giorni_lavorativi = [r['Data_Inizio']]
-                                q_giorn = r['Quantita_Totale'] / len(giorni_lavorativi)
+                    with st.spinner("Estrazione semantica ed elaborazione matrici WBS in corso..."):
+                        df_estratti = elabora_materiali_bim_con_ia(client, files_unificati)
+                        
+                        if df_estratti.empty:
+                            st.error("L'elaborazione non ha prodotto dati validi. Verifica l'integrità dei documenti.")
+                        else:
+                            righe_arricchite = []
+                            giorni_unici = set()
+                            
+                            for index, row in df_estratti.iterrows():
+                                giorni_lavorativi = pd.bdate_range(start=row['Data_Inizio'], end=row['Data_Fine'])
+                                if len(giorni_lavorativi) < 1: giorni_lavorativi = [row['Data_Inizio']]
+                                quantita_giorn = row['Quantita_Totale'] / len(giorni_lavorativi)
                                 
                                 for d in giorni_lavorativi:
-                                    d_str = d.strftime('%Y-%m-%d')
+                                    data_str = d.strftime('%Y-%m-%d')
+                                    giorni_unici.add(data_str)
+                                    
                                     # Allocazione materiale
-                                    righe_reali.append({'Data': d_str, 'Parametro': 'Materiali', 'Elemento': r['Elemento'], 'Quantita': q_giorn})
+                                    righe_arricchite.append({'Data': data_str, 'Parametro': 'Materiali', 'Elemento': row['Elemento'], 'Quantita': quantita_giorn})
+                                    
                                     # Sfridi e logistica
-                                    q_rif = q_giorn * 0.15
-                                    righe_reali.append({'Data': d_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
+                                    q_rif = quantita_giorn * 0.15
+                                    righe_arricchite.append({'Data': data_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
+                                    righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (quantita_giorn/28000)*30*0.25})
+                                    righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
+
                 except Exception as e:
                     st.error(f"Errore nell'elaborazione del modello BIM: {e}")
 
