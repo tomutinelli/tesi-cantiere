@@ -144,58 +144,69 @@ def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
     if match: return match[0]
     return elemento_grezzo
 
-# --- FUNZIONE IA PER MATERIALI/ABACHI ---
-def elabora_materiali_bim_con_ia(client_ia, lista_file):
+# --- FUNZIONE IA UNIFICATA CHE COMPRENDE SIA MATERIALI CHE SENSORI ---
+def elabora_documenti_cantiere_con_ia(client_ia, lista_file):
     contents = []
     for f in lista_file:
-        f.seek(0)
+        f.seek(0) # Reset posizionale fondamentale
         ext = f.name.split('.')[-1].lower()
-        mime = 'application/pdf' if ext == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if ext in ['xlsx', 'xls'] else 'text/plain'
+        mime = 'application/pdf' if ext == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if ext in ['xlsx', 'xls'] else 'text/csv' if ext == 'csv' else 'text/plain'
         contents.append(types.Part.from_bytes(data=f.getvalue(), mime_type=mime))
     
     prompt = """
-    Sei un esperto BIM e analista dati. Analizza i file allegati: gli abachi dei materiali (esportati da Revit) e il cronoprogramma di cantiere.
-    Il tuo compito è:
-    1. Identificare i codici WBS negli abachi e la relativa massa totale in kg del materiale.
-    2. Trovare gli stessi codici WBS nel cronoprogramma per determinare la data di inizio e fine dell'attività lavorativa associata.
-    3. Restituire in output ESCLUSIVAMENTE un file in formato CSV puro con le seguenti 5 colonne esatte, separate da virgola:
+    Sei un esperto BIM e analista dati di cantiere. Analizza tutti i file allegati (abachi BIM, cronoprogramma, e/o log della sensoristica IoT).
+    Il tuo compito è estrarre ed unificare i dati in un formato strutturato.
+
+    1. Da Abachi BIM e Cronoprogramma:
+       - Identifica le famiglie/materiali e la quantità totale in kg.
+       - Correla i codici WBS con il cronoprogramma per determinare Data_Inizio e Data_Fine.
+       - Imposta Parametro="Materiali".
+
+    2. Dai Log dei Sensori IoT / Telemetria (se presenti):
+       - Identifica i consumi rilevati per Energia (kWh), Acqua (litri), Macchinari (ore/litri) o Trasporti (km/litri).
+       - Estrai l'intervallo temporale rilevato nei log (Data_Inizio e Data_Fine o singola data).
+       - Imposta Parametro con uno tra: "Energia", "Acqua", "Macchinari", "Trasporti".
+
+    Restituisci in output ESCLUSIVAMENTE un file in formato CSV puro con le seguenti 5 colonne esatte, separate da virgola:
     Parametro,Elemento,Quantita_Totale,Data_Inizio,Data_Fine
 
-    Istruzioni di compilazione:
-    - Parametro: inserire sempre la stringa "Materiali".
-    - Elemento: inserire il nome del materiale come indicato nell'abaco (es. "Acciaio S355 J2W").
-    - Quantita_Totale: valore numerico assoluto con punto decimale (es. 1382813.97). Non includere unità di misura.
+    Regole di formattazione:
+    - Parametro: "Materiali", "Energia", "Acqua", "Macchinari" o "Trasporti".
+    - Elemento: nome del materiale o della fonte (es. "Acciaio S355", "Gas naturale - NGCC", "Water supply", "Diesel").
+    - Quantita_Totale: numero decimale con punto (es. 12500.50).
     - Data_Inizio: formato AAAA-MM-GG.
     - Data_Fine: formato AAAA-MM-GG.
 
-    Non inserire commenti, note o formattazione markdown. Restituisci unicamente la tabella CSV.
+    Nessun commento, nota o formattazione markdown. Soltanto le righe CSV.
     """
     contents.append(prompt)
     
     csv_out = ""
     for _ in range(3):
         try:
-            # Sostituito modello a 1.5-flash
             res = client_ia.models.generate_content(model='gemini-1.5-flash', contents=contents)
             csv_out = res.text.strip()
             break
         except Exception as e:
-            time.sleep(5)
+            time.sleep(3)
             
     if not csv_out: return pd.DataFrame()
     
     if csv_out.startswith("```"): csv_out = csv_out.split("```")[1].replace("csv\n", "").strip()
     elif "Parametro,Elemento" in csv_out: csv_out = csv_out[csv_out.find("Parametro,Elemento"):]
     
-    df = pd.read_csv(io.StringIO(csv_out))
-    df.columns = df.columns.str.strip()
-    df['Data_Inizio'] = pd.to_datetime(df['Data_Inizio'], errors='coerce')
-    df['Data_Fine'] = pd.to_datetime(df['Data_Fine'], errors='coerce')
-    df['Quantita_Totale'] = pd.to_numeric(df['Quantita_Totale'], errors='coerce').fillna(0)
-    return df.dropna(subset=['Data_Inizio', 'Data_Fine'])
+    try:
+        df = pd.read_csv(io.StringIO(csv_out))
+        df.columns = df.columns.str.strip()
+        df['Data_Inizio'] = pd.to_datetime(df['Data_Inizio'], errors='coerce')
+        df['Data_Fine'] = pd.to_datetime(df['Data_Fine'], errors='coerce')
+        df['Quantita_Totale'] = pd.to_numeric(df['Quantita_Totale'], errors='coerce').fillna(0)
+        return df.dropna(subset=['Data_Inizio', 'Data_Fine'])
+    except Exception:
+        return pd.DataFrame()
 
 
-# --- FUNZIONE PYTHON (NO IA) PER SENSORI IOT ---
+# --- FUNZIONE PYTHON DI RISERVA PER SENSORI IOT ---
 def elabora_sensori_pandas(files_sensori):
     righe_reali = []
     for f in files_sensori:
@@ -207,11 +218,8 @@ def elabora_sensori_pandas(files_sensori):
             else: continue
                 
             col_lower = [str(c).lower() for c in df_s.columns]
-            
-            # Cerca una colonna per le date
             date_col = next((c for c in df_s.columns if any(k in str(c).lower() for k in ['date', 'time', 'dat', 'timestamp'])), df_s.columns[0])
             
-            # Match consumi ENERGIA
             if any('kwh' in c for c in col_lower) or any('energy' in c for c in col_lower) or any('energia' in c for c in col_lower):
                 val_col = next(c for c in df_s.columns if 'kwh' in str(c).lower() or 'energy' in str(c).lower() or 'energia' in str(c).lower())
                 df_s[val_col] = pd.to_numeric(df_s[val_col], errors='coerce')
@@ -219,7 +227,6 @@ def elabora_sensori_pandas(files_sensori):
                 for _, r in df_agg.dropna().iterrows():
                     righe_reali.append({'Data': r[date_col].strftime('%Y-%m-%d'), 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': r[val_col]})
                     
-            # Match consumi ACQUA
             elif any('lit' in c for c in col_lower) or any('vol' in c for c in col_lower) or any('water' in c for c in col_lower) or any('acqua' in c for c in col_lower):
                 val_col = next(c for c in df_s.columns if 'lit' in str(c).lower() or 'vol' in str(c).lower() or 'water' in str(c).lower() or 'acqua' in str(c).lower())
                 df_s[val_col] = pd.to_numeric(df_s[val_col], errors='coerce')
@@ -227,7 +234,6 @@ def elabora_sensori_pandas(files_sensori):
                 for _, r in df_agg.dropna().iterrows():
                     righe_reali.append({'Data': r[date_col].strftime('%Y-%m-%d'), 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': r[val_col]})
                     
-            # Match TRASPORTI
             elif any('dist' in c for c in col_lower) or any('km' in c for c in col_lower):
                 val_col = next(c for c in df_s.columns if 'dist' in str(c).lower() or 'km' in str(c).lower())
                 df_s[val_col] = pd.to_numeric(df_s[val_col], errors='coerce')
@@ -235,15 +241,13 @@ def elabora_sensori_pandas(files_sensori):
                 for _, r in df_agg.dropna().iterrows():
                     righe_reali.append({'Data': r[date_col].strftime('%Y-%m-%d'), 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': r[val_col] * 0.25})
             
-            # Match MACCHINARI
             elif any('ore' in c for c in col_lower) or any('hour' in c for c in col_lower) or any('tempo' in c for c in col_lower):
                 val_col = next(c for c in df_s.columns if 'ore' in str(c).lower() or 'hour' in str(c).lower() or 'tempo' in str(c).lower())
                 df_s[val_col] = pd.to_numeric(df_s[val_col], errors='coerce')
                 df_agg = df_s.groupby(pd.to_datetime(df_s[date_col], errors='coerce').dt.date)[val_col].sum().reset_index()
                 for _, r in df_agg.dropna().iterrows():
                     righe_reali.append({'Data': r[date_col].strftime('%Y-%m-%d'), 'Parametro': 'Macchinari', 'Elemento': 'Diesel', 'Quantita': r[val_col] * 15.0})
-        except Exception as e: 
-            st.error(f"Errore nel parsing del file sensore {f.name}: {e}")
+        except Exception: pass
     return righe_reali
 
 
@@ -287,7 +291,7 @@ if "**Fase di progettazione**" in fase_cantiere:
             try:
                 client = genai.Client(api_key=api_key)
                 with st.spinner("Estrazione semantica ed elaborazione matrici WBS in corso..."):
-                    df_estratti = elabora_materiali_bim_con_ia(client, files_unificati)
+                    df_estratti = elabora_documenti_cantiere_con_ia(client, files_unificati)
                     
                     if df_estratti.empty:
                         st.error("L'elaborazione non ha prodotto dati validi. Verifica l'integrità dei documenti.")
@@ -329,66 +333,64 @@ elif "**Fase di esecuzione**" in fase_cantiere:
     <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
         <h4>Integrazione telemetria e monitoraggio dinamico</h4>
         <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 0; line-height: 1.5;'>
-        I materiali e il cronoprogramma (WBS) vengono analizzati dinamicamente dall'IA. I dati di cantiere operativi (Energia, Acqua, ecc.) vengono parsati in autonomia tramite codice, estraendo temporalità e consumi direttamente dai file CSV di log.
+        In questa modalità l'IA analizza congiuntamente abachi BIM, cronoprogramma e log dei sensori. I materiali, la relativa logistica degli sfridi e i consumi operativi misurati sul campo vengono unificati e mappati nell'intervallo temporale rilevato.
         </p>
     </div>
     """, unsafe_allow_html=True)
     
     col_file1, col_file2 = st.columns(2)
     with col_file1:
-        files_bim = st.file_uploader("1. Abachi BIM e cronoprogramma (file multipli)", type=['csv', 'xlsx', 'pdf'], accept_multiple_files=True, help="Elaborati dall'IA per materiali e logistica")
+        files_bim = st.file_uploader("1. Abachi BIM e cronoprogramma (file multipli)", type=['csv', 'xlsx', 'pdf'], accept_multiple_files=True)
     with col_file2:
-        files_sensori = st.file_uploader("2. Log sensoristica IoT (file multipli CSV/XLSX)", type=['csv', 'xlsx'], accept_multiple_files=True, help="Elaborati tramite script Python su base data")
+        files_sensori = st.file_uploader("2. Log sensoristica IoT (file multipli CSV/XLSX)", type=['csv', 'xlsx'], accept_multiple_files=True)
         
     if st.button("Unifica ed elabora monitoraggio dinamico"):
         api_key = st.secrets.get("GEMINI_API_KEY")
         
-        if not files_bim and not files_sensori:
+        # Reset dei buffer su tutti i file
+        tutti_i_files = (files_bim if files_bim else []) + (files_sensori if files_sensori else [])
+        for f in tutti_i_files: f.seek(0)
+        
+        if not tutti_i_files:
             st.warning("Eseguire il caricamento di almeno un pacchetto dati (BIM o Sensori).")
         else:
             righe_reali = []
             
-            # --- 1. Materiali ed Abachi elaborati via IA ---
-            if files_bim:
-                if not api_key: 
-                    st.error("Chiave API mancante per l'elaborazione dei materiali.")
-                else:
-                    try:
-                        client = genai.Client(api_key=api_key)
-                        with st.spinner("Allineamento matrici WBS tramite IA in corso..."):
-                            df_mat = elabora_materiali_bim_con_ia(client, files_bim)
-                            if not df_mat.empty:
-                                for _, r in df_mat.iterrows():
-                                    giorni_lavorativi = pd.bdate_range(start=r['Data_Inizio'], end=r['Data_Fine'])
-                                    if len(giorni_lavorativi) < 1: giorni_lavorativi = [r['Data_Inizio']]
-                                    q_giorn = r['Quantita_Totale'] / len(giorni_lavorativi)
+            # 1. Elaborazione primaria con IA (BIM + Sensori)
+            if api_key:
+                try:
+                    client = genai.Client(api_key=api_key)
+                    with st.spinner("Estrazione ed allineamento temporale IA in corso..."):
+                        df_estratti = elabora_documenti_cantiere_con_ia(client, tutti_i_files)
+                        
+                        if not df_estratti.empty:
+                            for _, r in df_estratti.iterrows():
+                                giorni_lavorativi = pd.bdate_range(start=r['Data_Inizio'], end=r['Data_Fine'])
+                                if len(giorni_lavorativi) < 1: giorni_lavorativi = [r['Data_Inizio']]
+                                q_giorn = r['Quantita_Totale'] / len(giorni_lavorativi)
+                                
+                                param = str(r['Parametro']).strip().title()
+                                
+                                for d in giorni_lavorativi:
+                                    d_str = d.strftime('%Y-%m-%d')
+                                    righe_reali.append({'Data': d_str, 'Parametro': param, 'Elemento': r['Elemento'], 'Quantita': q_giorn})
                                     
-                                    for d in giorni_lavorativi:
-                                        d_str = d.strftime('%Y-%m-%d')
-                                        
-                                        # Materiale
-                                        righe_reali.append({'Data': d_str, 'Parametro': 'Materiali', 'Elemento': r['Elemento'], 'Quantita': q_giorn})
-                                        
-                                        # Sfridi e logistica
+                                    # Calcolo automatico sfridi e trasporti per i materiali
+                                    if param.lower() == 'materiali':
                                         q_rif = q_giorn * 0.15
                                         righe_reali.append({'Data': d_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
                                         righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_giorn/28000)*30*0.25})
                                         righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
-                            else:
-                                st.warning("Materiali non trovati: L'elaborazione IA dei documenti non ha prodotto righe CSV.")
-                    except Exception as e:
-                        st.error(f"Errore nell'elaborazione del modello BIM tramite IA: {e}")
+                except Exception as e:
+                    st.error(f"Errore durante l'elaborazione IA: {e}")
 
-            # --- 2. Dati Sensori parsati da Python nativo (senza IA) ---
+            # 2. Integrazione/Fallback per Sensori IoT con Pandas
             if files_sensori:
-                with st.spinner("Parsing cronologico file di log..."):
-                    righe_sensori = elabora_sensori_pandas(files_sensori)
-                    if righe_sensori:
-                        righe_reali.extend(righe_sensori)
-                    else:
-                        st.warning("Log sensori ignorati: Impossibile trovare date o colonne idonee (kwh, lit, ecc.).")
+                righe_sensori = elabora_sensori_pandas(files_sensori)
+                if righe_sensori:
+                    righe_reali.extend(righe_sensori)
 
-            # --- Consolidamento dei dati totali ---
+            # Consolidamento e visualizzazione
             if righe_reali:
                 df_cantiere_reale = pd.DataFrame(righe_reali)
                 df_cantiere_reale['Quantita'] = pd.to_numeric(df_cantiere_reale['Quantita'], errors='coerce').fillna(0)
@@ -398,7 +400,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                 st.session_state['df_cantiere'] = df_cantiere_reale
                 st.success("Modello dinamico unificato. Colonne convertite e mappate correttamente sul database ambientale.")
             else:
-                st.error("Nessun dato valido generato o estratto dai file caricati.")
+                st.error("Nessun dato valido estratto dai file caricati. Verificare l'integrità dei documenti.")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
