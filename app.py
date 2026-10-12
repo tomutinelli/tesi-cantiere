@@ -1,3 +1,4 @@
+import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -9,31 +10,7 @@ from difflib import get_close_matches
 from google import genai
 from google.genai import types
 
-
-import streamlit as st
-import streamlit.components.v1 as components
-import json
-
- # !!!!!!!!!!!!!!!!!
-def browser_log(messaggio, dati=None):
-    with st.expander("🔍 Debug applicazione", expanded=True):
-        st.write("Messaggio:", messaggio)
-
-    if dati is not None:
-        if isinstance(dati, pd.DataFrame):
-            st.write("Dimensioni:", dati.shape)
-            st.dataframe(dati)
-        else:
-            st.write("Valore:", dati)
-
-
-
-
 st.set_page_config(page_title="EcoSite Tracker | Analisi LCA", layout="wide")
-
-# Inizializzazione sicura dello stato all'avvio
-if 'df_cantiere' not in st.session_state:
-    st.session_state['df_cantiere'] = pd.DataFrame()
 
 st.markdown("""
 <style>
@@ -220,7 +197,7 @@ st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("Impostazioni architettura dati")
 
 def reset_dati():
-    st.session_state['df_cantiere'] = pd.DataFrame()
+    if 'df_cantiere' in st.session_state: del st.session_state['df_cantiere']
 
 fase_cantiere = st.radio(
     "Seleziona la tipologia di analisi LCA:",
@@ -240,20 +217,16 @@ if "**Fase di progettazione**" in fase_cantiere:
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        stima_macchinari = st.number_input("**Macchinari** (kg diesel/giorno)", value=0.0, min_value=0.0, step=5.0)
+        stima_macchinari = st.number_input("**Macchinari** (kg diesel/giorno)", value=45.0, min_value=0.0, step=5.0)
     with col2:
-        stima_energia = st.number_input("**Energia elettrica** (kWh/giorno)", value=0.0, min_value=0.0, step=10.0)
+        stima_energia = st.number_input("**Energia elettrica** (kWh/giorno)", value=120.0, min_value=0.0, step=10.0)
     with col3:
-        stima_acqua = st.number_input("**Acqua** (litri/giorno)", value=0.0, min_value=0.0, step=50.0)
+        stima_acqua = st.number_input("**Acqua** (litri/giorno)", value=500.0, min_value=0.0, step=50.0)
     
     files_unificati = st.file_uploader("Documentazione di cantiere: abachi e cronoprogramma (file multipli)", type=['pdf', 'txt', 'xlsx', 'csv'], accept_multiple_files=True)
 
     if st.button("Elabora modello predittivo"):
-        api_key = None
-        try:
-            api_key = st.secrets.get("GEMINI_API_KEY")
-        except Exception:
-            api_key = os.getenv("GEMINI_API_KEY")
+        api_key = st.secrets.get("GEMINI_API_KEY")
         if not api_key: st.error("Chiave API mancante nella configurazione.")
         elif not files_unificati: st.warning("È necessario caricare la documentazione per avviare il matching.")
         else:
@@ -317,7 +290,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         righe_reali = []
         api_key = st.secrets.get("GEMINI_API_KEY")
         
-        # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)        
+        # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)
         if files_bim:
             if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
             else:
@@ -342,7 +315,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
                 except Exception as e:
                     st.error(f"Errore nell'elaborazione del modello BIM: {e}")
-        
+
         # 2. Elaborazione Modulo Sensori
         if files_sensori:
             for f in files_sensori:
@@ -393,10 +366,8 @@ elif "**Fase di esecuzione**" in fase_cantiere:
 st.markdown("</div>", unsafe_allow_html=True)
 
 
-if 'df_cantiere' in st.session_state and not st.session_state['df_cantiere'].empty:
-
+if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere'].copy()
-    browser_log("Dati cantiere caricati", df_cantiere)
     
     df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='mixed', errors='coerce')
     
@@ -497,5 +468,3 @@ if 'df_cantiere' in st.session_state and not st.session_state['df_cantiere'].emp
             st.dataframe(df_filtrato.drop(columns=['Data_dt', 'Parametro_Title', 'Parametro_match', 'Elemento_match'], errors='ignore'), use_container_width=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
-else:
-    st.info("Carica i file di progetto o di monitoraggio e avvia l'elaborazione per visualizzare le analisi LCA e i grafici.")
