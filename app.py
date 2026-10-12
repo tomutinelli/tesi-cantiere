@@ -1,4 +1,3 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -9,6 +8,23 @@ import time
 from difflib import get_close_matches
 from google import genai
 from google.genai import types
+
+
+import streamlit as st
+import streamlit.components.v1 as components
+import json
+
+def browser_log(messaggio):
+messaggio_json = json.dumps(str(messaggio))
+components.html(
+f""" <script>
+console.log("[DEBUG Python → Browser]", {messaggio_json}); </script>
+""",
+height=0,
+)
+
+
+
 
 st.set_page_config(page_title="EcoSite Tracker | Analisi LCA", layout="wide")
 
@@ -291,6 +307,8 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         api_key = st.secrets.get("GEMINI_API_KEY")
         
         # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)
+        browser_log(f"files_bim: {files_bim}")
+        
         if files_bim:
             if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
             else:
@@ -315,7 +333,7 @@ elif "**Fase di esecuzione**" in fase_cantiere:
                                     righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
                 except Exception as e:
                     st.error(f"Errore nell'elaborazione del modello BIM: {e}")
-
+        
         # 2. Elaborazione Modulo Sensori
         if files_sensori:
             for f in files_sensori:
