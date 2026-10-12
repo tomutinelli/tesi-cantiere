@@ -296,7 +296,6 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         if files_bim:
             api_key = st.secrets.get("GEMINI_API_KEY")
             if not api_key: st.error("Chiave API mancante nella configurazione.")
-            elif not files_unificati: st.warning("È necessario caricare la documentazione per avviare il matching.")
             else:
                 try:
                     client = genai.Client(api_key=api_key)
