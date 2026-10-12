@@ -10,8 +10,6 @@ from difflib import get_close_matches
 from google import genai
 from google.genai import types
 
-
-
 st.set_page_config(page_title="EcoSite Tracker | Analisi LCA", layout="wide")
 
 st.markdown("""
@@ -219,11 +217,11 @@ if "**Fase di progettazione**" in fase_cantiere:
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        stima_macchinari = st.number_input("**Macchinari** (kg diesel/giorno)", value=0.0, min_value=0.0, step=5.0)
+        stima_macchinari = st.number_input("**Macchinari** (kg diesel/giorno)", value=45.0, min_value=0.0, step=5.0)
     with col2:
-        stima_energia = st.number_input("**Energia elettrica** (kWh/giorno)", value=0.0, min_value=0.0, step=10.0)
+        stima_energia = st.number_input("**Energia elettrica** (kWh/giorno)", value=120.0, min_value=0.0, step=10.0)
     with col3:
-        stima_acqua = st.number_input("**Acqua** (litri/giorno)", value=0.0, min_value=0.0, step=50.0)
+        stima_acqua = st.number_input("**Acqua** (litri/giorno)", value=500.0, min_value=0.0, step=50.0)
     
     files_unificati = st.file_uploader("Documentazione di cantiere: abachi e cronoprogramma (file multipli)", type=['pdf', 'txt', 'xlsx', 'csv'], accept_multiple_files=True)
 
@@ -294,38 +292,27 @@ elif "**Fase di esecuzione**" in fase_cantiere:
         
         # 1. Elaborazione Matrice BIM (Materiali, Rifiuti e Trasporti Materiali)
         if files_bim:
-            api_key = st.secrets.get("GEMINI_API_KEY")
-            if not api_key: st.error("Chiave API mancante nella configurazione.")
+            if not api_key: st.error("Chiave API mancante per l'elaborazione dei materiali.")
             else:
                 try:
                     client = genai.Client(api_key=api_key)
-                    with st.spinner("Estrazione semantica ed elaborazione matrici WBS in corso..."):
-                        df_estratti = elabora_materiali_bim_con_ia(client, files_unificati)
-                        
-                        if df_estratti.empty:
-                            st.error("L'elaborazione non ha prodotto dati validi. Verifica l'integrità dei documenti.")
-                        else:
-                            righe_arricchite = []
-                            giorni_unici = set()
-                            
-                            for index, row in df_estratti.iterrows():
-                                giorni_lavorativi = pd.bdate_range(start=row['Data_Inizio'], end=row['Data_Fine'])
-                                if len(giorni_lavorativi) < 1: giorni_lavorativi = [row['Data_Inizio']]
-                                quantita_giorn = row['Quantita_Totale'] / len(giorni_lavorativi)
+                    with st.spinner("Allineamento matrici WBS in corso..."):
+                        df_mat = elabora_materiali_bim_con_ia(client, files_bim)
+                        if not df_mat.empty:
+                            for _, r in df_mat.iterrows():
+                                giorni_lavorativi = pd.bdate_range(start=r['Data_Inizio'], end=r['Data_Fine'])
+                                if len(giorni_lavorativi) < 1: giorni_lavorativi = [r['Data_Inizio']]
+                                q_giorn = r['Quantita_Totale'] / len(giorni_lavorativi)
                                 
                                 for d in giorni_lavorativi:
-                                    data_str = d.strftime('%Y-%m-%d')
-                                    giorni_unici.add(data_str)
-                                    
+                                    d_str = d.strftime('%Y-%m-%d')
                                     # Allocazione materiale
-                                    righe_arricchite.append({'Data': data_str, 'Parametro': 'Materiali', 'Elemento': row['Elemento'], 'Quantita': quantita_giorn})
-                                    
+                                    righe_reali.append({'Data': d_str, 'Parametro': 'Materiali', 'Elemento': r['Elemento'], 'Quantita': q_giorn})
                                     # Sfridi e logistica
-                                    q_rif = quantita_giorn * 0.15
-                                    righe_arricchite.append({'Data': data_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
-                                    righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (quantita_giorn/28000)*30*0.25})
-                                    righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
-
+                                    q_rif = q_giorn * 0.15
+                                    righe_reali.append({'Data': d_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
+                                    righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_giorn/28000)*30*0.25})
+                                    righe_reali.append({'Data': d_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
                 except Exception as e:
                     st.error(f"Errore nell'elaborazione del modello BIM: {e}")
 
