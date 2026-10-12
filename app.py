@@ -10,6 +10,8 @@ from difflib import get_close_matches
 from google import genai
 from google.genai import types
 
+
+
 st.set_page_config(page_title="EcoSite Tracker | Analisi LCA", layout="wide")
 
 st.markdown("""
