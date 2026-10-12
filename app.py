@@ -15,13 +15,13 @@ import streamlit.components.v1 as components
 import json
 
 def browser_log(messaggio):
-messaggio_json = json.dumps(str(messaggio))
-components.html(
-f""" <script>
-console.log("[DEBUG Python → Browser]", {messaggio_json}); </script>
-""",
-height=0,
-)
+    messaggio_json = json.dumps(str(messaggio))
+    components.html(
+    f""" <script>
+    console.log("[DEBUG Python → Browser]", {messaggio_json}); </script>
+    """,
+    height=0,
+    )
 
 
 
