@@ -12,9 +12,9 @@ from google import genai
 from google.genai import types
 
 # Impostazioni della pagina
-st.set_page_config(page_title="EcoSite Tracker | LCA Dashboard", layout="wide")
+st.set_page_config(page_title="EcoSite Tracker | Analisi LCA", layout="wide")
 
-# --- STILE CSS ---
+# --- STILE CSS MINIMAL ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
@@ -31,39 +31,38 @@ st.markdown("""
 
     div.minimal-card {
         background-color: #ffffff !important;
-        border: 1.5px solid #d5ddd1 !important;
-        border-radius: 8px !important;
+        border: 1px solid #e5e7eb !important;
+        border-radius: 4px !important;
         padding: 32px !important;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.01) !important;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02) !important;
         margin-bottom: 24px !important;
     }
 
-    h1 { font-weight: 600; letter-spacing: -0.025em; color: #111827; font-size: 2.25rem; }
-    h2, h3 { font-weight: 500; letter-spacing: -0.01em; color: #1f2937; }
+    h1 { font-weight: 600; letter-spacing: -0.02em; color: #111827; font-size: 2rem; }
+    h2, h3 { font-weight: 500; letter-spacing: -0.01em; color: #374151; }
+    h4 { font-weight: 500; color: #4b5563; font-size: 1.1rem; margin-top: 0; }
 
     .stRadio label, .stNumberInput label, .stDateInput label, .stFileUploader label, .stSelectbox label {
-        font-weight: 500; font-size: 0.9rem; color: #4b5563;
+        font-weight: 500; font-size: 0.85rem; color: #4b5563; text-transform: uppercase; letter-spacing: 0.05em;
     }
     
     .stRadio div[role="radiogroup"] {
-        background-color: #ffffff; padding: 15px; border-radius: 8px; border: 1.5px solid #d5ddd1;
+        background-color: #ffffff; padding: 16px; border-radius: 4px; border: 1px solid #e5e7eb;
     }
 
     .custom-dl-btn {
         text-decoration: none !important; background-color: #ffffff !important;
-        border: 1.5px solid #d5ddd1 !important; color: #374151 !important;
-        padding: 0.6rem 1rem !important; border-radius: 8px !important;
-        font-size: 0.9rem !important; font-weight: 500 !important;
+        border: 1px solid #d1d5db !important; color: #374151 !important;
+        padding: 0.5rem 1rem !important; border-radius: 4px !important;
+        font-size: 0.85rem !important; font-weight: 500 !important;
         display: block !important; text-align: center !important;
         width: 100% !important; margin-top: 8px !important;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02) !important;
-        transition: all 0.25s ease-in-out !important; letter-spacing: 0.3px !important;
+        transition: all 0.2s ease-in-out !important;
     }
     
     .custom-dl-btn:hover {
-        border-color: #a7b89f !important; background-color: #f4f7f3 !important;
-        color: #111827 !important; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.06) !important;
-        transform: translateY(-2px) !important;
+        border-color: #9ca3af !important; background-color: #f9fafb !important;
+        color: #111827 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -116,7 +115,7 @@ percorso_lci = "LCI.xlsx"
 df_inventario = carica_database_lci(percorso_lci)
 
 if df_inventario is None or df_inventario.empty:
-    st.error(f"Errore critico: Il database '{percorso_lci}' non è reperibile.")
+    st.error(f"Errore di sistema: Il database LCI '{percorso_lci}' non è reperibile o è corrotto.")
     st.stop()
 
 def mappa_voce_a_lci(parametro, elemento_grezzo, df_inv=df_inventario):
@@ -158,16 +157,18 @@ def reset_dati():
     if 'df_cantiere' in st.session_state: del st.session_state['df_cantiere']
 
 fase_cantiere = st.radio(
-    "Seleziona la fase del ciclo di vita del progetto:",
-    ["🏗️ Fase di Progettazione (Stima Predittiva IA)", "📡 Fase di Esecuzione (Monitoraggio Dinamico IoT)"],
+    "Seleziona la fase operativa dell'analisi:",
+    ["Fase di Progettazione (Stima Predittiva)", "Fase di Esecuzione (Monitoraggio Dinamico)"],
     on_change=reset_dati
 )
 
 if "Progettazione" in fase_cantiere:
     st.markdown("""
-    <div style='background-color: #f4f7f3; border: 1.5px solid #d5ddd1; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
-        <h4 style='color: #111827; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Stima Predittiva</h4>
-        <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 10px;'>In assenza di sensori, imposta i consumi medi giornalieri previsti. L'IA aggancerà questi dati ai giorni lavorativi estratti da abachi e cronoprogramma.</p>
+    <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
+        <h4>Analisi Predittiva</h4>
+        <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 10px; line-height: 1.5;'>
+        In assenza di telemetria, il sistema modella l'impronta carbonica distribuendo i materiali estratti dal modello BIM sulle finestre temporali del cronoprogramma. Compila i consumi operativi medi previsti per l'accantieramento. I rifiuti verranno calcolati automaticamente al 15% di sfrido, e i trasporti stimati su 30 km.
+        </p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -179,16 +180,16 @@ if "Progettazione" in fase_cantiere:
     with col3:
         stima_acqua = st.number_input("Acqua (Litri/giorno)", value=500.0, min_value=0.0, step=50.0)
     
-    files_unificati = st.file_uploader("Carica abachi materiali e cronoprogramma (PDF/CSV)", type=['pdf', 'txt', 'xlsx', 'csv', 'ifc'], accept_multiple_files=True, key="ia_unified")
+    files_unificati = st.file_uploader("Carica abachi materiali e cronoprogramma (PDF, CSV, XLSX)", type=['pdf', 'txt', 'xlsx', 'csv', 'ifc'], accept_multiple_files=True, key="ia_unified")
 
-    if st.button("Avvia Analisi Predittiva con IA"):
+    if st.button("Elabora Modello Predittivo"):
         api_key = st.secrets.get("GEMINI_API_KEY")
-        if not api_key: st.error("Chiave API mancante nei Secrets.")
-        elif not files_unificati: st.warning("Carica almeno un file per procedere.")
+        if not api_key: st.error("Errore di configurazione: Chiave API mancante.")
+        elif not files_unificati: st.warning("È necessario caricare la documentazione di cantiere per procedere.")
         else:
             try:
                 client = genai.Client(api_key=api_key)
-                with st.spinner("L'IA sta estraendo i dati e applicando le tue stime..."):
+                with st.spinner("Estrazione semantica in corso..."):
                     contents = []
                     for file_obj in files_unificati:
                         file_obj.seek(0)
@@ -197,10 +198,13 @@ if "Progettazione" in fase_cantiere:
                         contents.append(types.Part.from_bytes(data=file_obj.getvalue(), mime_type=mime))
                     
                     prompt_sistema = """
-                    Sei un BIM manager. Leggi gli abachi e individua WBS, materiale e massa.
-                    Leggi il Gantt per trovare data inizio e fine di quella WBS.
-                    Restituisci SOLO un CSV con colonne: Parametro,Elemento,Quantita_Totale,Data_Inizio,Data_Fine
-                    Parametro deve essere sempre "Materiali".
+                    Analizza gli abachi e il cronoprogramma. Identifica per ogni voce WBS il materiale, la massa totale (in kg) e le date di inizio e fine dell'attività associata.
+                    Restituisci unicamente un file CSV strutturato esattamente in questo modo:
+                    Parametro,Elemento,Quantita_Totale,Data_Inizio,Data_Fine
+                    
+                    Regole: 
+                    - 'Parametro' deve sempre riportare la dicitura 'Materiali'.
+                    - Nessun testo aggiuntivo, unicamente il blocco CSV.
                     """
                     contents.append(prompt_sistema)
                     
@@ -214,7 +218,7 @@ if "Progettazione" in fase_cantiere:
                             if any(err in str(e) for err in ["429", "503", "UNAVAILABLE"]): time.sleep(10)
                             else: break
                     
-                    if not csv_testo: st.error("Errore IA. Riprova.")
+                    if not csv_testo: st.error("I server di analisi sono sovraccarichi. Riprova più tardi.")
                     else:
                         if csv_testo.startswith("```"): csv_testo = csv_testo.split("```")[1].replace("csv\n", "").strip()
                         elif "Parametro,Elemento" in csv_testo: csv_testo = csv_testo[csv_testo.find("Parametro,Elemento"):]
@@ -237,13 +241,17 @@ if "Progettazione" in fase_cantiere:
                             for data_curr in giorni_lavorativi:
                                 data_str = data_curr.strftime('%Y-%m-%d')
                                 giorni_unici.add(data_str)
-                                righe_arricchite.append({'Data': data_str, 'Parametro': row['Parametro'], 'Elemento': row['Elemento'], 'Quantita': quantita_giorn})
                                 
+                                # Inserimento Materiali
+                                righe_arricchite.append({'Data': data_str, 'Parametro': 'Materiali', 'Elemento': row['Elemento'], 'Quantita': quantita_giorn})
+                                
+                                # Calcolo Rifiuti e Trasporti
                                 q_rif = quantita_giorn * 0.15
                                 righe_arricchite.append({'Data': data_str, 'Parametro': 'Rifiuti', 'Elemento': 'Inerti / Macerie di demolizione', 'Quantita': q_rif})
                                 righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (quantita_giorn/28000)*30*0.25})
                                 righe_arricchite.append({'Data': data_str, 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': (q_rif/28000)*30*0.25})
 
+                        # Inserimento Consumi Fissi
                         for d in giorni_unici:
                             righe_arricchite.append({'Data': d, 'Parametro': 'Macchinari', 'Elemento': 'Diesel', 'Quantita': stima_macchinari})
                             righe_arricchite.append({'Data': d, 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': stima_energia})
@@ -252,93 +260,110 @@ if "Progettazione" in fase_cantiere:
                         df_cantiere_grezzo = pd.DataFrame(righe_arricchite)
                         df_cantiere_grezzo['Elemento'] = df_cantiere_grezzo.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
                         st.session_state['df_cantiere'] = df_cantiere_grezzo
-                        st.success("Modello LCA predittivo generato con le tue stime!")
-            except Exception as e: st.error(f"Errore: {e}")
+                        st.success("Modello LCA predittivo generato con successo.")
+            except Exception as e: st.error(f"Errore di esecuzione: {e}")
 
 elif "Esecuzione" in fase_cantiere:
     st.markdown("""
-    <div style='background-color: #eef2ff; border: 1.5px solid #c7d2fe; border-radius: 8px; padding: 20px; margin-bottom: 20px;'>
-        <h4 style='color: #1e3a8a; margin-top: 0; font-size: 1.1rem; font-weight: 600;'>Integrazione Telemetria IoT</h4>
-        <p style='color: #3730a3; font-size: 0.9rem; margin-bottom: 0;'>Carica i log generati dai sensori (GPS, Smart Meter, Flussimetri) e il CSV base dei materiali. Il sistema unificherà i dati reali in un unico Digital Twin LCA.</p>
+    <div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 20px; margin-bottom: 20px;'>
+        <h4>Integrazione Telemetria e Monitoraggio Dinamico</h4>
+        <p style='color: #4b5563; font-size: 0.9rem; margin-bottom: 0; line-height: 1.5;'>
+        Carica nei rispettivi moduli l'output strutturato dei materiali estratti dal modello BIM e i file di log generati dalla sensoristica di cantiere. Il sistema mapperà le grandezze fisiche (kWh, Litri, Km) normalizzando il tracciato per la conformità con il database LCI, creando un digital twin ambientale accurato.
+        </p>
     </div>
     """, unsafe_allow_html=True)
     
     col_file1, col_file2 = st.columns(2)
     with col_file1:
-        file_mat = st.file_uploader("1. Dataset Materiali Base (CSV)", type=['csv'], help="Formato standard: Data, Parametro, Elemento, Quantita")
-        file_gps = st.file_uploader("2. Log Trasporti GPS (CSV)", type=['csv'], help="Riconosce colonna 'Distance_km' o 'Distanza'")
+        file_mat = st.file_uploader("Dataset Materiali BIM (CSV singolo)", type=['csv'], help="Formato richiesto: Data, Parametro, Elemento, Quantita")
     with col_file2:
-        file_en = st.file_uploader("3. Log Smart Meter Energia (CSV)", type=['csv'], help="Riconosce colonna 'ActiveEnergy_kWh' o 'kWh'")
-        file_acq = st.file_uploader("4. Log Flussimetro Acqua (CSV)", type=['csv'], help="Riconosce colonna 'TotalVolume_Liters' o 'Litri'")
+        files_sensori = st.file_uploader("Log Sensori IoT (CSV multipli)", type=['csv'], accept_multiple_files=True, help="Supporta log da Smart Meter, Flussimetri e Moduli GPS veicolari")
         
-    if st.button("Elabora e Unifica Dati IoT"):
+    if st.button("Elabora e Unifica Modello Dinamico"):
         righe_reali = []
         
-        # Elaborazione Materiali
+        # Elaborazione Modulo Materiali
         if file_mat:
-            file_mat.seek(0)
-            df_m = pd.read_csv(file_mat)
-            for col in df_m.columns:
-                c_low = str(col).strip().lower()
-                if 'data' in c_low or 'date' in c_low: col_data = col
-                elif 'param' in c_low or 'categ' in c_low: col_param = col
-                elif 'elem' in c_low or 'material' in c_low: col_elem = col
-                elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'massa' in c_low: col_quant = col
-            
-            for _, r in df_m.iterrows():
-                righe_reali.append({'Data': str(r[col_data])[:10], 'Parametro': r[col_param], 'Elemento': r[col_elem], 'Quantita': r[col_quant]})
-        
-        # Elaborazione Trasporti GPS
-        if file_gps:
-            file_gps.seek(0)
-            df_g = pd.read_csv(file_gps)
-            dist_col = next((c for c in df_g.columns if 'dist' in c.lower() or 'km' in c.lower()), None)
-            date_col = next((c for c in df_g.columns if 'dat' in c.lower()), df_g.columns[0])
-            if dist_col:
-                df_g_agg = df_g.groupby(df_g[date_col].astype(str).str[:10])[dist_col].sum().reset_index()
-                for _, r in df_g_agg.iterrows():
-                    righe_reali.append({'Data': r[date_col], 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': r[dist_col] * 0.25}) # 0.25 kg/km
-                    
-        # Elaborazione Energia
-        if file_en:
-            file_en.seek(0)
-            df_e = pd.read_csv(file_en)
-            kwh_col = next((c for c in df_e.columns if 'kwh' in c.lower() or 'energ' in c.lower()), None)
-            date_col = next((c for c in df_e.columns if 'time' in c.lower() or 'dat' in c.lower()), df_e.columns[0])
-            if kwh_col:
-                df_e_agg = df_e.groupby(df_e[date_col].astype(str).str[:10])[kwh_col].sum().reset_index()
-                for _, r in df_e_agg.iterrows():
-                    righe_reali.append({'Data': r[date_col], 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': r[kwh_col]})
+            try:
+                file_mat.seek(0)
+                df_m = pd.read_csv(file_mat)
+                mappa_colonne = {}
+                for col in df_m.columns:
+                    c_low = str(col).strip().lower()
+                    if 'data' in c_low or 'date' in c_low: mappa_colonne['Data'] = col
+                    elif 'param' in c_low or 'categ' in c_low: mappa_colonne['Parametro'] = col
+                    elif 'elem' in c_low or 'material' in c_low: mappa_colonne['Elemento'] = col
+                    elif 'quant' in c_low or 'val' in c_low or 'qt' in c_low or 'massa' in c_low: mappa_colonne['Quantita'] = col
+                
+                if 'Data' in mappa_colonne and 'Elemento' in mappa_colonne and 'Quantita' in mappa_colonne:
+                    param_col_name = mappa_colonne.get('Parametro', None)
+                    for _, r in df_m.iterrows():
+                        param_val = r[param_col_name] if param_col_name else 'Materiali'
+                        righe_reali.append({
+                            'Data': str(r[mappa_colonne['Data']])[:10],
+                            'Parametro': param_val,
+                            'Elemento': r[mappa_colonne['Elemento']],
+                            'Quantita': r[mappa_colonne['Quantita']]
+                        })
+            except Exception as e:
+                st.error(f"Errore nella lettura del Dataset Materiali: {e}")
 
-        # Elaborazione Acqua
-        if file_acq:
-            file_acq.seek(0)
-            df_a = pd.read_csv(file_acq)
-            lit_col = next((c for c in df_a.columns if 'lit' in c.lower() or 'vol' in c.lower()), None)
-            date_col = next((c for c in df_a.columns if 'time' in c.lower() or 'dat' in c.lower()), df_a.columns[0])
-            if lit_col:
-                df_a_agg = df_a.groupby(df_a[date_col].astype(str).str[:10])[lit_col].sum().reset_index()
-                for _, r in df_a_agg.iterrows():
-                    righe_reali.append({'Data': r[date_col], 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': r[lit_col]})
+        # Elaborazione Modulo Sensori
+        if files_sensori:
+            for f in files_sensori:
+                try:
+                    f.seek(0)
+                    df_s = pd.read_csv(f)
+                    col_lower = [c.lower() for c in df_s.columns]
+                    
+                    date_col = next((c for c in df_s.columns if 'date' in c.lower() or 'time' in c.lower() or 'data' in c.lower()), df_s.columns[0])
+                    
+                    # Riconoscimento log Energia Elettrica (kWh)
+                    if any('kwh' in c for c in col_lower) or any('energy' in c for c in col_lower):
+                        val_col = next(c for c in df_s.columns if 'kwh' in c.lower() or 'energy' in c.lower())
+                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                        for _, r in df_agg.iterrows():
+                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Energia', 'Elemento': 'Gas naturale - NGCC', 'Quantita': r[val_col]})
+                            
+                    # Riconoscimento log Acqua (Litri)
+                    elif any('lit' in c for c in col_lower) or any('vol' in c for c in col_lower):
+                        val_col = next(c for c in df_s.columns if 'lit' in c.lower() or 'vol' in c.lower())
+                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                        for _, r in df_agg.iterrows():
+                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Acqua', 'Elemento': 'Water supply', 'Quantita': r[val_col]})
+                            
+                    # Riconoscimento log Trasporti (Km)
+                    elif any('dist' in c for c in col_lower) or any('km' in c for c in col_lower):
+                        val_col = next(c for c in df_s.columns if 'dist' in c.lower() or 'km' in c.lower())
+                        df_agg = df_s.groupby(df_s[date_col].astype(str).str[:10])[val_col].sum().reset_index()
+                        for _, r in df_agg.iterrows():
+                            # Conversione dinamica distanza in consumo carburante (0.25 kg diesel al km)
+                            righe_reali.append({'Data': r[date_col], 'Parametro': 'Trasporti', 'Elemento': 'Diesel', 'Quantita': r[val_col] * 0.25})
+                            
+                except Exception as e:
+                    st.error(f"Errore nella lettura del file {f.name}: {e}")
 
         if righe_reali:
             df_cantiere_reale = pd.DataFrame(righe_reali)
-            # Raggruppa eventuali duplicati dello stesso giorno
+            # Normalizzazione formati per compatibilità LCI
+            df_cantiere_reale['Quantita'] = pd.to_numeric(df_cantiere_reale['Quantita'], errors='coerce').fillna(0)
             df_cantiere_reale = df_cantiere_reale.groupby(['Data', 'Parametro', 'Elemento'], as_index=False)['Quantita'].sum()
             df_cantiere_reale['Elemento'] = df_cantiere_reale.apply(lambda r: mappa_voce_a_lci(r['Parametro'], r['Elemento']), axis=1)
+            
             st.session_state['df_cantiere'] = df_cantiere_reale
-            st.success("Dati dei sensori integrati con successo!")
+            st.success("Analisi telemetrica e normalizzazione dei dati completata con successo.")
         else:
-            st.warning("Carica almeno un file dati per procedere.")
+            st.warning("Eseguire il caricamento di almeno un modulo (Materiali o Sensori) per generare il calcolo.")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
 # =====================================================================
-# ELABORAZIONE E ANALISI LCA (COMUNE A ENTRAMBE LE FASI)
+# ELABORAZIONE E ANALISI LCA (MODULO COMUNE)
 # =====================================================================
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere'].copy()
     
+    # Generazione automatica rifiuti se assenti nel caricamento dinamico
     rifiuti_presenti = (df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'rifiuti').any()
     if not rifiuti_presenti:
         mat_mask = df_cantiere['Parametro'].astype(str).str.strip().str.lower() == 'materiali'
@@ -351,6 +376,7 @@ if 'df_cantiere' in st.session_state:
     
     df_cantiere['Data_dt'] = pd.to_datetime(df_cantiere['Data'], format='mixed', errors='coerce')
     
+    # Processo di incrocio dati (Matching) con il database LCI
     df_cantiere['Parametro_match'] = df_cantiere['Parametro'].astype(str).str.strip().str.lower()
     df_cantiere['Elemento_match'] = df_cantiere['Elemento'].astype(str).str.strip().str.lower()
     df_inventario['Parametro_match'] = df_inventario['Parametro'].astype(str).str.strip().str.lower()
@@ -372,12 +398,12 @@ if 'df_cantiere' in st.session_state:
     # FILTRO TEMPORALE
     # -------------------------------------------------------------
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-    st.subheader("Filtro Temporale")
+    st.subheader("Configurazione Temporale")
     
     min_date = df_completo['Data_dt'].min().date() if not df_completo.empty and pd.notna(df_completo['Data_dt'].min()) else date.today()
     max_date = df_completo['Data_dt'].max().date() if not df_completo.empty and pd.notna(df_completo['Data_dt'].max()) else date.today()
 
-    date_range = st.date_input("Seleziona l'intervallo temporale:", value=(min_date, max_date), min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
+    date_range = st.date_input("Selezione intervallo di calcolo:", value=(min_date, max_date), min_value=min_date, max_value=max_date, format="DD/MM/YYYY")
 
     if isinstance(date_range, tuple) and len(date_range) == 2:
         df_filtrato = df_completo.loc[(df_completo['Data_dt'].dt.date >= date_range[0]) & (df_completo['Data_dt'].dt.date <= date_range[1])].copy()
@@ -387,68 +413,68 @@ if 'df_cantiere' in st.session_state:
 
     # --- VISUALIZZAZIONE GRAFICI ---
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-    st.subheader("Risultati Analitici (Emissioni Assolute)")
+    st.subheader("Risultati Analitici")
     if df_filtrato.empty: 
-        st.warning("Nessuna evidenza registrata per il periodo selezionato.")
+        st.info("La selezione temporale non presenta dati elaborabili.")
     else:
-        modo_visualizzazione = st.selectbox("Modalità di visualizzazione grafica", ["Standard (Barre temporali)", "Distribuzione (KDE / Frequenza)", "Linea Media (Andamento)", "Linea Media Fissa"], index=0)
+        modo_visualizzazione = st.selectbox("Modalità di visualizzazione dati", ["Standard (Distribuzione Temporale)", "Analisi di Frequenza (KDE)", "Andamento (Media Mobile)", "Andamento (Media Fissa)"], index=0)
 
         def genera_figura(df_dat, x_col, y_col, titolo, colore_base):
             df_dat = df_dat.copy()
             if df_dat.empty: return go.Figure()
-            if "Distribuzione" in modo_visualizzazione:
-                fig = px.histogram(df_dat, x=y_col, nbins=20, marginal="violin", title=f"{titolo} - Distribuzione Frazionale", labels={y_col: 'kg CO₂e'}, color_discrete_sequence=[colore_base])
-            elif "Andamento" in modo_visualizzazione:
+            if "Frequenza" in modo_visualizzazione:
+                fig = px.histogram(df_dat, x=y_col, nbins=20, marginal="violin", title=f"{titolo} - Analisi di Frequenza", labels={y_col: 'kg CO₂e'}, color_discrete_sequence=[colore_base])
+            elif "Media Mobile" in modo_visualizzazione:
                 df_dat = df_dat.sort_values(by=x_col)
                 df_dat['Media_Mobile'] = df_dat[y_col].rolling(window=7, min_periods=1).mean()
                 fig = go.Figure()
-                fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Giornaliero', marker_color=colore_base, opacity=0.4))
-                fig.add_trace(go.Scatter(x=df_dat[x_col], y=df_dat['Media_Mobile'], mode='lines', name='Media (7gg)', line=dict(color='#111827', width=3)))
-                fig.update_layout(title=f"{titolo} - Andamento Media Mobile")
-            elif "Fissa" in modo_visualizzazione:
+                fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Dato Giornaliero', marker_color=colore_base, opacity=0.4))
+                fig.add_trace(go.Scatter(x=df_dat[x_col], y=df_dat['Media_Mobile'], mode='lines', name='Media Mobile', line=dict(color='#111827', width=2)))
+                fig.update_layout(title=f"{titolo} - Variazione su Media Mobile")
+            elif "Media Fissa" in modo_visualizzazione:
                 media_val = df_dat[y_col].mean()
                 fig = go.Figure()
-                fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Giornaliero', marker_color=colore_base, opacity=0.5))
-                fig.add_hline(y=media_val, line_dash="dash", line_color="#27ae60", annotation_text=f"Media: {media_val:.2f}")
-                fig.update_layout(title=f"{titolo} - Linea Media Fissa")
+                fig.add_trace(go.Bar(x=df_dat[x_col], y=df_dat[y_col], name='Dato Giornaliero', marker_color=colore_base, opacity=0.5))
+                fig.add_hline(y=media_val, line_dash="dash", line_color="#4b5563", annotation_text=f"Media: {media_val:.2f}")
+                fig.update_layout(title=f"{titolo} - Riferimento su Media Fissa")
             else:
                 fig = px.bar(df_dat, x=x_col, y=y_col, title=titolo, labels={y_col: 'kg CO₂e', x_col: ''})
                 fig.update_traces(marker_color=colore_base)
             
-            fig.update_layout(height=380, font_family="Inter", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', title_font_size=14)
+            fig.update_layout(height=380, font_family="Inter", plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', title_font_size=13, title_font_color="#374151")
             return fig
 
         df_totale = df_filtrato.groupby('Data')['CO2_Totale_kg'].sum().reset_index()
-        st.plotly_chart(genera_figura(df_totale, 'Data', 'CO2_Totale_kg', "Andamento Complessivo Emissioni", "#0B0752"), use_container_width=True)
+        st.plotly_chart(genera_figura(df_totale, 'Data', 'CO2_Totale_kg', "Andamento Complessivo Impronta Carbonica", "#111827"), use_container_width=True)
         
         st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
         df_filtrato['Parametro_Title'] = df_filtrato['Parametro'].astype(str).str.title()
         df_pie = df_filtrato.groupby('Parametro_Title')['CO2_Totale_kg'].sum().reset_index()
         df_pie = df_pie[df_pie['CO2_Totale_kg'] > 0]
         
-        colori_parametri = {'Materiali': "#B80D0D", 'Rifiuti': "#078303", 'Trasporti': "#732BB7", 'Energia': "#f6de03", 'Acqua': "#53DCFE", 'Macchinari': "#8a929e"}
+        colori_parametri = {'Materiali': "#991b1b", 'Rifiuti': "#166534", 'Trasporti': "#4338ca", 'Energia': "#ca8a04", 'Acqua': "#0369a1", 'Macchinari': "#4b5563"}
         if not df_pie.empty:
-            fig_pie = px.pie(df_pie, values='CO2_Totale_kg', names='Parametro_Title', title="Incidenza Percentuale Categorie", color='Parametro_Title', color_discrete_map=colori_parametri, hole=0.4)
+            fig_pie = px.pie(df_pie, values='CO2_Totale_kg', names='Parametro_Title', title="Incidenza Strutturale per Categorie Operative", color='Parametro_Title', color_discrete_map=colori_parametri, hole=0.4)
             fig_pie.update_traces(textposition='inside', textinfo='percent+label', marker=dict(line=dict(color='#ffffff', width=2)))
-            fig_pie.update_layout(height=450, font_family="Inter", showlegend=True, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+            fig_pie.update_layout(height=450, font_family="Inter", showlegend=True, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', title_font_size=13, title_font_color="#374151")
             st.plotly_chart(fig_pie, use_container_width=True)
 
         col_exp1, col_exp2 = st.columns(2)
-        with col_exp1: st.download_button("📥 Scarica dati totali (CSV)", data=df_totale.to_csv(index=False).encode('utf-8'), file_name="emissioni_totali.csv", mime="text/csv")
+        with col_exp1: st.download_button("Esporta Dati Totali (Formato CSV)", data=df_totale.to_csv(index=False).encode('utf-8'), file_name="emissioni_totali.csv", mime="text/csv")
         with col_exp2:
             output_xlsx = io.BytesIO()
             with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer: df_totale.to_excel(writer, index=False, sheet_name='Totale')
-            st.download_button("📥 Scarica dati totali (XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("Esporta Dati Totali (Formato XLSX)", data=output_xlsx.getvalue(), file_name="emissioni_totali.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
         st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
-        st.subheader("Disaggregazione per Categoria")
+        st.subheader("Analisi Disaggregata per Voci")
         col_grafici = st.columns(2)
         for idx, param in enumerate(df_filtrato['Parametro_Title'].dropna().unique()):
             df_p = df_filtrato[df_filtrato['Parametro_Title'] == param].groupby('Data')['CO2_Totale_kg'].sum().reset_index()
             with col_grafici[idx % 2]:
                 st.plotly_chart(genera_figura(df_p, 'Data', 'CO2_Totale_kg', param, colori_parametri.get(param, '#4b5563')), use_container_width=True)
 
-        with st.expander("Esporta Matrice Dati Completa"):
+        with st.expander("Ispezione Matrice Dati"):
             st.dataframe(df_filtrato.drop(columns=['Data_dt', 'Parametro_Title', 'Parametro_match', 'Elemento_match'], errors='ignore'), use_container_width=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
