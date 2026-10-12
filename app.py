@@ -156,7 +156,7 @@ def elabora_materiali_bim_con_ia(client_ia, lista_file):
     Sei un esperto BIM e analista dati. Analizza i file allegati: gli abachi dei materiali (esportati da Revit) e il cronoprogramma di cantiere.
     Il tuo compito è:
     1. Identificare i codici WBS negli abachi e la relativa massa totale in kg del materiale.
-    2. Trovare gli stessi codici WBS nel cronoprogramma per determinare la data di inizio e fine dell'attività lavorativa associata.
+    2. Trovare gli stessi codici WBS (o fortemente simili) nel cronoprogramma per determinare la data di inizio e fine dell'attività lavorativa associata.
     3. Restituire in output ESCLUSIVAMENTE un file in formato CSV puro con le seguenti 5 colonne esatte, separate da virgola:
     Parametro,Elemento,Quantita_Totale,Data_Inizio,Data_Fine
 
@@ -164,33 +164,50 @@ def elabora_materiali_bim_con_ia(client_ia, lista_file):
     - Parametro: inserire sempre la stringa "Materiali".
     - Elemento: inserire il nome del materiale come indicato nell'abaco (es. "Acciaio S355 J2W").
     - Quantita_Totale: valore numerico assoluto con punto decimale (es. 1382813.97). Non includere unità di misura.
-    - Data_Inizio: formato AAAA-MM-GG.
-    - Data_Fine: formato AAAA-MM-GG.
+    - Data_Inizio: converti la data del cronoprogramma nel formato internazionale AAAA-MM-GG.
+    - Data_Fine: converti la data del cronoprogramma nel formato internazionale AAAA-MM-GG.
 
     Non inserire commenti, note o formattazione markdown. Restituisci unicamente la tabella CSV.
     """
     contents.append(prompt)
     
     csv_out = ""
-    for _ in range(3):
+    ultimo_errore = ""
+    
+    for tentativo in range(3):
         try:
-            res = client_ia.models.generate_content(model='gemini-3.6-flash', contents=contents)
+            res = client_ia.models.generate_content(model='gemini-1.5-flash', contents=contents)
             csv_out = res.text.strip()
             break
         except Exception as e:
+            ultimo_errore = str(e)
             time.sleep(5)
             
-    if not csv_out: return pd.DataFrame()
+    if not csv_out:
+        st.error(f"⚠️ Errore di connessione API Gemini: {ultimo_errore}")
+        return pd.DataFrame()
     
-    if csv_out.startswith("```"): csv_out = csv_out.split("```")[1].replace("csv\n", "").strip()
-    elif "Parametro,Elemento" in csv_out: csv_out = csv_out[csv_out.find("Parametro,Elemento"):]
+    if csv_out.startswith("```"): 
+        csv_out = csv_out.split("```")[1].replace("csv\n", "").strip()
+    elif "Parametro,Elemento" in csv_out: 
+        csv_out = csv_out[csv_out.find("Parametro,Elemento"):]
     
-    df = pd.read_csv(io.StringIO(csv_out))
-    df.columns = df.columns.str.strip()
-    df['Data_Inizio'] = pd.to_datetime(df['Data_Inizio'], errors='coerce')
-    df['Data_Fine'] = pd.to_datetime(df['Data_Fine'], errors='coerce')
-    df['Quantita_Totale'] = pd.to_numeric(df['Quantita_Totale'], errors='coerce').fillna(0)
-    return df.dropna(subset=['Data_Inizio', 'Data_Fine'])
+    try:
+        df = pd.read_csv(io.StringIO(csv_out))
+        df.columns = df.columns.str.strip()
+        df['Data_Inizio'] = pd.to_datetime(df['Data_Inizio'], format='mixed', dayfirst=True, errors='coerce')
+        df['Data_Fine'] = pd.to_datetime(df['Data_Fine'], format='mixed', dayfirst=True, errors='coerce')
+        df['Quantita_Totale'] = pd.to_numeric(df['Quantita_Totale'], errors='coerce').fillna(0)
+        
+        df_pulito = df.dropna(subset=['Data_Inizio', 'Data_Fine'])
+        
+        if df_pulito.empty and not df.empty:
+            st.warning("L'IA ha letto i documenti ma non ha trovato corrispondenze esatte tra i codici WBS degli abachi e quelli del cronoprogramma, oppure le date non sono state lette correttamente.")
+            
+        return df_pulito
+    except Exception as e:
+        st.error(f"⚠️ Errore di validazione del CSV generato dall'IA: {e}")
+        return pd.DataFrame()
 
 
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
@@ -364,7 +381,6 @@ elif "**Fase di esecuzione**" in fase_cantiere:
             st.warning("Eseguire il caricamento di almeno un pacchetto dati (BIM o Sensori) per generare il calcolo.")
 
 st.markdown("</div>", unsafe_allow_html=True)
-
 
 if 'df_cantiere' in st.session_state:
     df_cantiere = st.session_state['df_cantiere'].copy()
