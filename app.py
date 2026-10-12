@@ -249,7 +249,11 @@ if "**Fase di progettazione**" in fase_cantiere:
     files_unificati = st.file_uploader("Documentazione di cantiere: abachi e cronoprogramma (file multipli)", type=['pdf', 'txt', 'xlsx', 'csv'], accept_multiple_files=True)
 
     if st.button("Elabora modello predittivo"):
-        api_key = st.secrets.get("GEMINI_API_KEY")
+        api_key = None
+        try:
+            api_key = st.secrets.get("GEMINI_API_KEY")
+        except Exception:
+            api_key = os.getenv("GEMINI_API_KEY")
         if not api_key: st.error("Chiave API mancante nella configurazione.")
         elif not files_unificati: st.warning("È necessario caricare la documentazione per avviare il matching.")
         else:
