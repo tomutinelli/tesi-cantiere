@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import timedelta
 import numpy as np
+import os
 
 # --- IMPOSTAZIONI PAGINA E STILE CSS ---
 st.set_page_config(page_title="EcoSite Tracker", layout="wide")
@@ -24,20 +25,38 @@ if 'risultati_progettazione' not in st.session_state:
 if 'configurazioni_salvate' not in st.session_state:
     st.session_state.configurazioni_salvate = {}
 
-# --- FUNZIONI DI CARICAMENTO DATI STATICI (DA REPOSITORY) ---
-@st.cache_data
+# --- FUNZIONI DI CARICAMENTO DATI STATICI ---
+# NESSUN @st.cache_data: legge i file freschi ad ogni aggiornamento per evitare blocchi
 def load_static_data():
+    df_epd, df_lci, df_macc = None, None, None
+    err = ""
     try:
-        # Legge DIRETTAMENTE i file Excel per evitare problemi di separatori nei CSV
-        df_epd = pd.read_excel("EPD materiali.xlsx")
-        df_lci = pd.read_excel("LCI.xlsx", sheet_name=None)
-        df_macc = pd.read_excel("macchinari.xlsx")
-        return df_epd, df_lci, df_macc
+        # Cerca il file EPD in versione excel o csv
+        if os.path.exists("EPD materiali.xlsx"):
+            df_epd = pd.read_excel("EPD materiali.xlsx")
+        elif os.path.exists("epd_materiali.csv"):
+            df_epd = pd.read_csv("epd_materiali.csv", sep=None, engine='python', encoding='latin1')
+        else:
+            err += "Manca il database EPD (EPD materiali.xlsx o epd_materiali.csv). "
+            
+        if os.path.exists("LCI.xlsx"):
+            df_lci = pd.read_excel("LCI.xlsx", sheet_name=None)
+        else:
+            err += "Manca il database LCI.xlsx. "
+            
+        if os.path.exists("macchinari.xlsx"):
+            df_macc = pd.read_excel("macchinari.xlsx")
+        else:
+            err += "Manca il database macchinari.xlsx. "
+            
     except Exception as e:
-        st.error(f"Errore nel caricamento dei database di sistema (EPD, LCI, Macchinari). Verifica che i file Excel siano presenti nella cartella. Dettaglio: {e}")
-        return None, None, None
+        err += f"Errore interno di lettura database: {e}"
+        
+    return df_epd, df_lci, df_macc, err
 
-df_epd, df_lci, df_macc = load_static_data()
+df_epd, df_lci, df_macc, err_msg = load_static_data()
+if err_msg:
+    st.error(f"⚠️ {err_msg}")
 
 # --- SEZIONE 1: CARICAMENTO DATI UTENTE ---
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
@@ -78,17 +97,24 @@ if df_crono is not None:
     col_fine = next((c for c in df_crono.columns if 'fine' in str(c).lower()), None)
     
     if col_inizio and col_fine:
-        df_crono['Data_Inizio_Calc'] = pd.to_datetime(df_crono[col_inizio], errors='coerce')
-        df_crono['Data_Fine_Calc'] = pd.to_datetime(df_crono[col_fine], errors='coerce')
-        df_crono = df_crono.dropna(subset=['Data_Inizio_Calc']).sort_values(by='Data_Inizio_Calc')
+        # Aggiunto dayfirst=True per interpretare correttamente le date italiane (GG/MM/AAAA)
+        df_crono['Data_Inizio_Calc'] = pd.to_datetime(df_crono[col_inizio], dayfirst=True, errors='coerce')
+        df_crono['Data_Fine_Calc'] = pd.to_datetime(df_crono[col_fine], dayfirst=True, errors='coerce')
         
-        # Crea etichette per il menu a tendina
-        df_crono['Label_Attivita'] = df_crono['ID attività'].astype(str) + " - " + df_crono['Nome struttura'].astype(str) + " (" + df_crono['WBS Lavorazione'].astype(str) + ")"
+        # Elimina le righe in cui non è stato possibile leggere la data
+        df_crono = df_crono.dropna(subset=['Data_Inizio_Calc', 'Data_Fine_Calc']).sort_values(by='Data_Inizio_Calc')
         
-        if df_quantita is not None:
-            st.success(f"Cronoprogramma caricato e {len(lista_quantita)} file dei materiali uniti con successo!")
+        if len(df_crono) > 0:
+            # Crea etichette per il menu a tendina
+            df_crono['Label_Attivita'] = df_crono['ID attività'].astype(str) + " - " + df_crono['Nome struttura'].astype(str) + " (" + df_crono['WBS Lavorazione'].astype(str) + ")"
+            
+            if df_quantita is not None:
+                st.success(f"Cronoprogramma caricato e {len(lista_quantita)} file dei materiali uniti con successo!")
+            else:
+                st.warning("Cronoprogramma caricato, ma non sono stati rilevati file delle quantità dei materiali.")
         else:
-            st.warning("Cronoprogramma caricato, ma non sono stati rilevati file delle quantità dei materiali.")
+            st.error("Il cronoprogramma è stato letto, ma nessuna data era in un formato valido.")
+            df_crono = None
     else:
         st.error("Impossibile trovare le colonne delle date nel cronoprogramma.")
 else:
@@ -96,6 +122,7 @@ else:
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- SEZIONE 2: COMPILAZIONE ATTIVITA' ---
+# Ora la condizione si attiverà se i file non sono vuoti
 if df_crono is not None and df_epd is not None and df_lci is not None:
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
     st.subheader("2. Analisi Attività (Fase di Progettazione)")
@@ -104,7 +131,15 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     
     # Recupero dati attività
     row_att = df_crono[df_crono['Label_Attivita'] == attivita_selezionata].iloc[0]
-    id_att, nome_strutt, wbs_lav = row_att['ID attività'], row_att['Nome struttura'], row_att['WBS Lavorazione']
+    
+    # Recupero flessibile delle colonne descrittive
+    col_id = next((c for c in df_crono.columns if 'id' in str(c).lower()), df_crono.columns[0])
+    col_nome = next((c for c in df_crono.columns if 'struttura' in str(c).lower() or 'nome' in str(c).lower()), df_crono.columns[1])
+    col_wbs_lav = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), df_crono.columns[2])
+    
+    id_att = row_att[col_id]
+    nome_strutt = row_att[col_nome]
+    wbs_lav = row_att[col_wbs_lav]
     
     col_wbs_mat = next((c for c in df_crono.columns if 'wbs materiale' in str(c).lower()), None)
     wbs_mat = row_att[col_wbs_mat] if col_wbs_mat else None
@@ -113,8 +148,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     if df_quantita is not None and wbs_mat is not None:
         q_col_lav = next((c for c in df_quantita.columns if 'wbs lavorazione' in str(c).lower()), None)
         q_col_mat = next((c for c in df_quantita.columns if 'wbs materiale' in str(c).lower()), None)
-        
-        # Ricerca più flessibile per la colonna dei valori (Massa, Volume, Quantità, ecc.)
         q_col_massa = next((c for c in df_quantita.columns if any(k in str(c).lower() for k in ['massa', 'quantit', 'volume', 'peso'])), None)
         
         if q_col_lav and q_col_mat and q_col_massa:
@@ -227,7 +260,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             lista_ris = [r for r in st.session_state.risultati_progettazione if r['Attività'] != row_att['Label_Attivita']]
             lista_ris.append(record)
             st.session_state.risultati_progettazione = sorted(lista_ris, key=lambda x: x['Data Inizio'])
-            st.success("Attività salvata con successo!")
+            st.success("Attività salvata con successo! Vedi sotto i risultati aggiornati.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
