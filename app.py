@@ -17,7 +17,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("EcoSite Tracker 🌱")
+st.title("EcoSite Tracker")
 st.markdown("Monitoraggio Emissioni CO₂ eq in Cantiere (Fase di Progettazione e Costruzione)")
 
 # --- INIZIALIZZAZIONE SESSION STATE ---
