@@ -206,13 +206,16 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             consumo_medio = 0
             
         # MACCHINARI
+
         st.markdown("#### Macchinari")
         macchinario = st.selectbox("Scegli Macchinario base:", df_macc['Macchinario'].unique())
         df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
-        st.dataframe(df_macc_filt[['Macchinario', 'Produttore', 'Fattore emissivo 8h', 'Link Scheda']], hide_index=True)
+        
+        # Mostra la tabella usando i nomi corretti del tuo file Excel
+        st.dataframe(df_macc_filt[['Macchinario', 'Produttore', 'Emissioni [kgCO2eq]', 'Link']], hide_index=True)
         
         macc_produttore = st.selectbox("Modello Specifico:", df_macc_filt['Produttore'])
-        fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore]['Fattore emissivo 8h'].values[0]).replace(',', '.'))
+        fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore]['Emissioni [kgCO2eq]'].values[0]).replace(',', '.'))
         
         num_macc = st.number_input("Numero di macchinari impiegati:", min_value=1, value=1)
         col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
@@ -397,4 +400,4 @@ if st.session_state.risultati_progettazione:
         st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
+```<br><ElicitationsGroup><br>
