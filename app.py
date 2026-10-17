@@ -28,13 +28,13 @@ if 'configurazioni_salvate' not in st.session_state:
 @st.cache_data
 def load_static_data():
     try:
-        # Legge DIRETTAMENTE i file Excel per evitare problemi di separatori nei CSV
-        df_epd = pd.read_excel("EPD materiali.xlsx")
+        # Carica i database statici presenti nel repository (con codifica corretta)
+        df_epd = pd.read_csv("epd_materiali.csv", sep=None, engine='python', encoding='latin1')
         df_lci = pd.read_excel("LCI.xlsx", sheet_name=None)
         df_macc = pd.read_excel("macchinari.xlsx")
         return df_epd, df_lci, df_macc
     except Exception as e:
-        st.error(f"Errore nel caricamento dei database di sistema (EPD, LCI, Macchinari). Verifica che i file Excel siano presenti nella cartella. Dettaglio: {e}")
+        st.error(f"Errore nel caricamento dei database di sistema (EPD, LCI, Macchinari). Verifica che siano presenti nella cartella. Dettaglio: {e}")
         return None, None, None
 
 df_epd, df_lci, df_macc = load_static_data()
@@ -49,37 +49,32 @@ df_crono = None
 
 if file_caricati:
     for f in file_caricati:
-        try:
-            # Prova prima con il separatore europeo (punto e virgola)
-            df_temp = pd.read_csv(f, sep=';', encoding='utf-8-sig')
-            if len(df_temp.columns) < 2:
-                # Se non ha diviso le colonne, prova con la virgola standard
-                f.seek(0)
-                df_temp = pd.read_csv(f, sep=',', encoding='utf-8-sig')
-            
-            # Pulizia nomi colonne
-            df_temp.columns = df_temp.columns.str.strip()
-            col_lower = [str(c).lower() for c in df_temp.columns]
-            
-            # Se ci sono parole chiave del tempo, è il cronoprogramma. Altrimenti sono materiali.
-            if any('inizio' in c or 'fine' in c or 'durata' in c for c in col_lower):
-                df_crono = df_temp
-            else:
-                lista_quantita.append(df_temp)
-                
-        except Exception as e:
-            st.error(f"Errore nella lettura del file {f.name}: {e}")
+        df_temp = pd.read_csv(f, sep=None, engine='python', encoding='utf-8-sig')
+        
+        # Pulizia nomi colonne: rimuove spazi vuoti iniziali/finali invisibili
+        df_temp.columns = df_temp.columns.str.strip()
+        col_lower = [str(c).lower() for c in df_temp.columns]
+        
+        # Riconoscimento logico basato su parole chiave (invece che nomi esatti)
+        if any('massa' in c or 'densit' in c for c in col_lower):
+            lista_quantita.append(df_temp)
+        elif any('inizio' in c or 'fine' in c or 'durata' in c for c in col_lower):
+            df_crono = df_temp
 
-# Unisci tutti i file dei materiali
+# Unisci tutti i file dei materiali in un unico grande dataframe se ce n'è più di uno
 df_quantita = pd.concat(lista_quantita, ignore_index=True) if lista_quantita else None
 
 if df_crono is not None:
+    # Identifica dinamicamente le colonne delle date (indipendentemente dall'apostrofo)
     col_inizio = next((c for c in df_crono.columns if 'inizio' in str(c).lower()), None)
     col_fine = next((c for c in df_crono.columns if 'fine' in str(c).lower()), None)
     
     if col_inizio and col_fine:
+        # Ordina cronologicamente
         df_crono['Data_Inizio_Calc'] = pd.to_datetime(df_crono[col_inizio], errors='coerce')
         df_crono['Data_Fine_Calc'] = pd.to_datetime(df_crono[col_fine], errors='coerce')
+        
+        # Elimina righe vuote e ordina
         df_crono = df_crono.dropna(subset=['Data_Inizio_Calc']).sort_values(by='Data_Inizio_Calc')
         
         # Crea etichette per il menu a tendina
@@ -90,7 +85,7 @@ if df_crono is not None:
         else:
             st.warning("Cronoprogramma caricato, ma non sono stati rilevati file delle quantità dei materiali.")
     else:
-        st.error("Impossibile trovare le colonne delle date nel cronoprogramma.")
+        st.error("Errore: impossibile trovare le colonne delle date nel cronoprogramma (assicurati che ci siano colonne con 'inizio' e 'fine' nel nome).")
 else:
     st.info("Carica i file CSV per iniziare.")
 st.markdown("</div>", unsafe_allow_html=True)
@@ -106,24 +101,26 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     row_att = df_crono[df_crono['Label_Attivita'] == attivita_selezionata].iloc[0]
     id_att, nome_strutt, wbs_lav = row_att['ID attività'], row_att['Nome struttura'], row_att['WBS Lavorazione']
     
+    # Recupero colonna WBS materiale (gestendo eventuali spazi o difetti nel nome colonna)
     col_wbs_mat = next((c for c in df_crono.columns if 'wbs materiale' in str(c).lower()), None)
     wbs_mat = row_att[col_wbs_mat] if col_wbs_mat else None
     
+    # Recupero quantità materiale dai file uniti
     quantita_mat = 0
     if df_quantita is not None and wbs_mat is not None:
+        # Trova le colonne WBS nel file delle quantità
         q_col_lav = next((c for c in df_quantita.columns if 'wbs lavorazione' in str(c).lower()), None)
         q_col_mat = next((c for c in df_quantita.columns if 'wbs materiale' in str(c).lower()), None)
-        
-        # Ricerca più flessibile per la colonna dei valori (Massa, Volume, Quantità, ecc.)
-        q_col_massa = next((c for c in df_quantita.columns if any(k in str(c).lower() for k in ['massa', 'quantit', 'volume', 'peso'])), None)
+        q_col_massa = next((c for c in df_quantita.columns if 'massa' in str(c).lower()), None)
         
         if q_col_lav and q_col_mat and q_col_massa:
             match_q = df_quantita[(df_quantita[q_col_lav].astype(str) == str(wbs_lav)) & (df_quantita[q_col_mat].astype(str) == str(wbs_mat))]
             if not match_q.empty:
-                massa_pulita = pd.to_numeric(match_q[q_col_massa].astype(str).replace({',': '.'}, regex=True), errors='coerce').fillna(0)
+                # Forza la colonna della massa in numerico (in caso ci siano virgole o testo)
+                massa_pulita = pd.to_numeric(match_q[q_col_massa].replace({',': '.'}, regex=True), errors='coerce').fillna(0)
                 quantita_mat = massa_pulita.sum()
     
-    st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}**")
+    st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f} kg**")
     
     # --- FORM COMPILAZIONE ---
     with st.form(key=f"form_{attivita_selezionata}"):
@@ -144,6 +141,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             fattore_em_mat = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica]['Fattore emissivo'].values[0]
             fattore_em_rif = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica]['Trattamento rifiuti'].values[0]
             
+            # Trasformazione in float in caso di dati testuali con la virgola
             fattore_em_mat = float(str(fattore_em_mat).replace(',', '.'))
             fattore_em_rif = float(str(fattore_em_rif).replace(',', '.'))
             
@@ -181,6 +179,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore]['Fattore emissivo 8h'].values[0]).replace(',', '.'))
         
         num_macc = st.number_input("Numero di macchinari impiegati:", min_value=1, value=1)
+        # Identifica colonna durata
         col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
         durata_giorni = int(row_att[col_durata]) if col_durata else 1
         
