@@ -31,7 +31,7 @@ def load_static_data():
         # Carica i database statici presenti nel repository
         df_epd = pd.read_csv("epd_materiali.csv", sep=None, engine='python', encoding='latin1')
         df_lci = pd.read_excel("LCI.xlsx", sheet_name=None)
-        df_macc = pd.read_excel("macchinari.xlsx")
+        df_macc = pd.read_excel("macchinari.xlsx", sep=None, engine='python', encoding='latin1')
         return df_epd, df_lci, df_macc
     except Exception as e:
         st.error(f"Errore nel caricamento dei database di sistema (EPD, LCI, Macchinari). Verifica che siano presenti nella cartella. Dettaglio: {e}")
