@@ -4,7 +4,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import timedelta
 import numpy as np
-import os
 
 # --- IMPOSTAZIONI PAGINA E STILE CSS ---
 st.set_page_config(page_title="EcoSite Tracker", layout="wide")
@@ -25,37 +24,20 @@ if 'risultati_progettazione' not in st.session_state:
 if 'configurazioni_salvate' not in st.session_state:
     st.session_state.configurazioni_salvate = {}
 
-# --- FUNZIONI DI CARICAMENTO DATI STATICI ---
-# Nessuna cache: legge i file freschi ad ogni aggiornamento
+# --- FUNZIONI DI CARICAMENTO DATI STATICI (DA REPOSITORY) ---
+@st.cache_data
 def load_static_data():
-    df_epd, df_lci, df_macc = None, None, None
-    err = ""
     try:
-        if os.path.exists("EPD materiali.xlsx"):
-            df_epd = pd.read_excel("EPD materiali.xlsx")
-        elif os.path.exists("epd_materiali.csv"):
-            df_epd = pd.read_csv("epd_materiali.csv", sep=None, engine='python', encoding='latin1')
-        else:
-            err += "Manca il database EPD (EPD materiali.xlsx). "
-            
-        if os.path.exists("LCI.xlsx"):
-            df_lci = pd.read_excel("LCI.xlsx", sheet_name=None)
-        else:
-            err += "Manca il database LCI.xlsx. "
-            
-        if os.path.exists("macchinari.xlsx"):
-            df_macc = pd.read_excel("macchinari.xlsx")
-        else:
-            err += "Manca il database macchinari.xlsx. "
-            
+        # Legge DIRETTAMENTE i file Excel per evitare problemi di separatori nei CSV
+        df_epd = pd.read_excel("EPD materiali.xlsx")
+        df_lci = pd.read_excel("LCI.xlsx", sheet_name=None)
+        df_macc = pd.read_excel("macchinari.xlsx")
+        return df_epd, df_lci, df_macc
     except Exception as e:
-        err += f"Errore interno di lettura database: {e}"
-        
-    return df_epd, df_lci, df_macc, err
+        st.error(f"Errore nel caricamento dei database di sistema (EPD, LCI, Macchinari). Verifica che i file Excel siano presenti nella cartella. Dettaglio: {e}")
+        return None, None, None
 
-df_epd, df_lci, df_macc, err_msg = load_static_data()
-if err_msg:
-    st.error(f"⚠️ {err_msg}")
+df_epd, df_lci, df_macc = load_static_data()
 
 # --- SEZIONE 1: CARICAMENTO DATI UTENTE ---
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
@@ -68,15 +50,18 @@ df_crono = None
 if file_caricati:
     for f in file_caricati:
         try:
-            # Prova separatore europeo
+            # Prova prima con il separatore europeo (punto e virgola)
             df_temp = pd.read_csv(f, sep=';', encoding='utf-8-sig')
             if len(df_temp.columns) < 2:
+                # Se non ha diviso le colonne, prova con la virgola standard
                 f.seek(0)
                 df_temp = pd.read_csv(f, sep=',', encoding='utf-8-sig')
             
+            # Pulizia nomi colonne
             df_temp.columns = df_temp.columns.str.strip()
             col_lower = [str(c).lower() for c in df_temp.columns]
             
+            # Se ci sono parole chiave del tempo, è il cronoprogramma. Altrimenti sono materiali.
             if any('inizio' in c or 'fine' in c or 'durata' in c for c in col_lower):
                 df_crono = df_temp
             else:
@@ -85,6 +70,7 @@ if file_caricati:
         except Exception as e:
             st.error(f"Errore nella lettura del file {f.name}: {e}")
 
+# Unisci tutti i file dei materiali
 df_quantita = pd.concat(lista_quantita, ignore_index=True) if lista_quantita else None
 
 if df_crono is not None:
@@ -92,32 +78,17 @@ if df_crono is not None:
     col_fine = next((c for c in df_crono.columns if 'fine' in str(c).lower()), None)
     
     if col_inizio and col_fine:
-        df_crono['Data_Inizio_Calc'] = pd.to_datetime(df_crono[col_inizio], dayfirst=True, errors='coerce')
-        df_crono['Data_Fine_Calc'] = pd.to_datetime(df_crono[col_fine], dayfirst=True, errors='coerce')
-        df_crono = df_crono.dropna(subset=['Data_Inizio_Calc', 'Data_Fine_Calc']).sort_values(by='Data_Inizio_Calc')
+        df_crono['Data_Inizio_Calc'] = pd.to_datetime(df_crono[col_inizio], errors='coerce')
+        df_crono['Data_Fine_Calc'] = pd.to_datetime(df_crono[col_fine], errors='coerce')
+        df_crono = df_crono.dropna(subset=['Data_Inizio_Calc']).sort_values(by='Data_Inizio_Calc')
         
-        if len(df_crono) > 0:
-            # Creazione dinamica dell'etichetta del menu a tendina
-            col_id = next((c for c in df_crono.columns if 'id' in str(c).lower()), df_crono.columns[0])
-            col_nome = next((c for c in df_crono.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_crono.columns[1])
-            col_struttura = next((c for c in df_crono.columns if 'struttura' in str(c).lower()), None)
-            col_wbs = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), None)
-            
-            etichette = df_crono[col_id].astype(str) + " - " + df_crono[col_nome].astype(str)
-            if col_struttura:
-                etichette += " | " + df_crono[col_struttura].astype(str)
-            if col_wbs:
-                etichette += " (" + df_crono[col_wbs].astype(str) + ")"
-                
-            df_crono['Label_Attivita'] = etichette
-            
-            if df_quantita is not None:
-                st.success(f"Cronoprogramma caricato e {len(lista_quantita)} file dei materiali uniti con successo!")
-            else:
-                st.warning("Cronoprogramma caricato, ma non sono stati rilevati file delle quantità dei materiali.")
+        # Crea etichette per il menu a tendina
+        df_crono['Label_Attivita'] = df_crono['ID attività'].astype(str) + " - " + df_crono['Nome struttura'].astype(str) + " (" + df_crono['WBS Lavorazione'].astype(str) + ")"
+        
+        if df_quantita is not None:
+            st.success(f"Cronoprogramma caricato e {len(lista_quantita)} file dei materiali uniti con successo!")
         else:
-            st.error("Il cronoprogramma è stato letto, ma nessuna data era in un formato valido.")
-            df_crono = None
+            st.warning("Cronoprogramma caricato, ma non sono stati rilevati file delle quantità dei materiali.")
     else:
         st.error("Impossibile trovare le colonne delle date nel cronoprogramma.")
 else:
@@ -131,17 +102,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     
     attivita_selezionata = st.selectbox("Scegli la lavorazione dal cronoprogramma:", df_crono['Label_Attivita'].tolist())
     
+    # Recupero dati attività
     row_att = df_crono[df_crono['Label_Attivita'] == attivita_selezionata].iloc[0]
-    
-    col_id = next((c for c in df_crono.columns if 'id' in str(c).lower()), df_crono.columns[0])
-    col_nome = next((c for c in df_crono.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_crono.columns[1])
-    col_struttura = next((c for c in df_crono.columns if 'struttura' in str(c).lower()), None)
-    col_wbs_lav = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), None)
-    
-    id_att = row_att[col_id]
-    nome_att = row_att[col_nome]
-    nome_strutt = row_att[col_struttura] if col_struttura else ""
-    wbs_lav = row_att[col_wbs_lav] if col_wbs_lav else ""
+    id_att, nome_strutt, wbs_lav = row_att['ID attività'], row_att['Nome struttura'], row_att['WBS Lavorazione']
     
     col_wbs_mat = next((c for c in df_crono.columns if 'wbs materiale' in str(c).lower()), None)
     wbs_mat = row_att[col_wbs_mat] if col_wbs_mat else None
@@ -150,7 +113,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     if df_quantita is not None and wbs_mat is not None:
         q_col_lav = next((c for c in df_quantita.columns if 'wbs lavorazione' in str(c).lower()), None)
         q_col_mat = next((c for c in df_quantita.columns if 'wbs materiale' in str(c).lower()), None)
-        q_col_massa = next((c for c in df_quantita.columns if any(k in str(c).lower() for k in ['massa', 'quantit', 'volume', 'peso','Massa', 'Quantit', 'Volume', 'Peso',])), None)
+        
+        # Ricerca più flessibile per la colonna dei valori (Massa, Volume, Quantità, ecc.)
+        q_col_massa = next((c for c in df_quantita.columns if any(k in str(c).lower() for k in ['massa', 'quantit', 'volume', 'peso'])), None)
         
         if q_col_lav and q_col_mat and q_col_massa:
             match_q = df_quantita[(df_quantita[q_col_lav].astype(str) == str(wbs_lav)) & (df_quantita[q_col_mat].astype(str) == str(wbs_mat))]
@@ -160,6 +125,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     
     st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}**")
     
+    # --- FORM COMPILAZIONE ---
     with st.form(key=f"form_{attivita_selezionata}"):
         em_materiali, em_rifiuti, em_trasporti, em_energia, em_acqua, em_macchinari = 0, 0, 0, 0, 0, 0
         
@@ -206,16 +172,13 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             consumo_medio = 0
             
         # MACCHINARI
-
         st.markdown("#### Macchinari")
         macchinario = st.selectbox("Scegli Macchinario base:", df_macc['Macchinario'].unique())
         df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
-        
-        # Mostra la tabella usando i nomi corretti del tuo file Excel
-        st.dataframe(df_macc_filt[['Macchinario', 'Produttore', 'Emissioni [kgCO2eq]', 'Link']], hide_index=True)
+        st.dataframe(df_macc_filt[['Macchinario', 'Produttore', 'Fattore emissivo 8h', 'Link Scheda']], hide_index=True)
         
         macc_produttore = st.selectbox("Modello Specifico:", df_macc_filt['Produttore'])
-        fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore]['Emissioni [kgCO2eq]'].values[0]).replace(',', '.'))
+        fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore]['Fattore emissivo 8h'].values[0]).replace(',', '.'))
         
         num_macc = st.number_input("Numero di macchinari impiegati:", min_value=1, value=1)
         col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
@@ -245,7 +208,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             
             record = {
                 "Attività": row_att['Label_Attivita'],
-                "ID": id_att, "Nome": nome_att, "Struttura": nome_strutt, "WBS_L": wbs_lav, "WBS_M": wbs_mat,
+                "ID": id_att, "Nome": nome_strutt, "WBS_L": wbs_lav, "WBS_M": wbs_mat,
                 "Durata": durata_giorni, 
                 "Data Inizio": row_att['Data_Inizio_Calc'].date(), 
                 "Data Fine": row_att['Data_Fine_Calc'].date(),
@@ -264,9 +227,10 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             lista_ris = [r for r in st.session_state.risultati_progettazione if r['Attività'] != row_att['Label_Attivita']]
             lista_ris.append(record)
             st.session_state.risultati_progettazione = sorted(lista_ris, key=lambda x: x['Data Inizio'])
-            st.success("Attività salvata con successo! Vedi sotto i risultati aggiornati.")
+            st.success("Attività salvata con successo!")
 
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 # --- SEZIONE 3: RISULTATI E GRAFICI PROGETTAZIONE ---
 if st.session_state.risultati_progettazione:
@@ -280,6 +244,7 @@ if st.session_state.risultati_progettazione:
     gwp_totale = df_risultati["Totale [kgCO2 eq]"].sum()
     st.markdown(f"<div style='padding:15px; background-color:#e8f4f8; border-left: 5px solid #2980b9; border-radius:4px;'><h4>GWP Totale Cantiere (Stima): {gwp_totale:,.2f} kg CO₂ eq</h4></div>", unsafe_allow_html=True)
     
+    # Distribuzione Giornaliera per Grafici
     dati_giornalieri = []
     for _, row in df_risultati.iterrows():
         giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
@@ -315,6 +280,7 @@ if st.session_state.risultati_progettazione:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 # --- SEZIONE 4: FASE DI CANTIERE (DATI SENSORI) ---
 if st.session_state.risultati_progettazione:
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
@@ -330,18 +296,7 @@ if st.session_state.risultati_progettazione:
         
         if file_trasporti:
             df_t = pd.read_csv(file_trasporti)
-            # Ricreiamo la label dinamica se le colonne sono presenti
-            col_id = next((c for c in df_t.columns if 'id' in str(c).lower()), df_t.columns[1])
-            col_nome = next((c for c in df_t.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_t.columns[2] if len(df_t.columns)>2 else None)
-            col_str = next((c for c in df_t.columns if 'struttura' in str(c).lower()), None)
-            col_wbs = next((c for c in df_t.columns if 'wbs lav' in str(c).lower()), None)
-            
-            etichette_t = df_t[col_id].astype(str) + " - " + df_t[col_nome].astype(str)
-            if col_str: etichette_t += " | " + df_t[col_str].astype(str)
-            if col_wbs: etichette_t += " (" + df_t[col_wbs].astype(str) + ")"
-            
-            df_t['Label_Attivita'] = etichette_t
-            
+            df_t['Label_Attivita'] = df_t['ID attività'].astype(str) + " - " + df_t['Nome struttura'] + " (" + df_t['WBS Lavorazione'] + ")"
             for label in df_t['Label_Attivita'].unique():
                 if label in st.session_state.configurazioni_salvate:
                     conf = st.session_state.configurazioni_salvate[label]
@@ -352,16 +307,7 @@ if st.session_state.risultati_progettazione:
         
         if file_energia:
             df_e = pd.read_csv(file_energia)
-            col_id = next((c for c in df_e.columns if 'id' in str(c).lower()), df_e.columns[1])
-            col_nome = next((c for c in df_e.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_e.columns[2] if len(df_e.columns)>2 else None)
-            col_str = next((c for c in df_e.columns if 'struttura' in str(c).lower()), None)
-            col_wbs = next((c for c in df_e.columns if 'wbs lav' in str(c).lower()), None)
-            
-            etichette_e = df_e[col_id].astype(str) + " - " + df_e[col_nome].astype(str)
-            if col_str: etichette_e += " | " + df_e[col_str].astype(str)
-            if col_wbs: etichette_e += " (" + df_e[col_wbs].astype(str) + ")"
-            
-            df_e['Label_Attivita'] = etichette_e
+            df_e['Label_Attivita'] = df_e['ID attività'].astype(str) + " - " + df_e['Nome struttura'] + " (" + df_e['WBS Lavorazione'] + ")"
             for label in df_e['Label_Attivita'].unique():
                 if label in st.session_state.configurazioni_salvate:
                     kwh_totali = df_e[df_e['Label_Attivita'] == label]['consumo energetico [kWh]'].sum()
@@ -369,16 +315,7 @@ if st.session_state.risultati_progettazione:
                     
         if file_acqua:
             df_a = pd.read_csv(file_acqua)
-            col_id = next((c for c in df_a.columns if 'id' in str(c).lower()), df_a.columns[1])
-            col_nome = next((c for c in df_a.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_a.columns[2] if len(df_a.columns)>2 else None)
-            col_str = next((c for c in df_a.columns if 'struttura' in str(c).lower()), None)
-            col_wbs = next((c for c in df_a.columns if 'wbs lav' in str(c).lower()), None)
-            
-            etichette_a = df_a[col_id].astype(str) + " - " + df_a[col_nome].astype(str)
-            if col_str: etichette_a += " | " + df_a[col_str].astype(str)
-            if col_wbs: etichette_a += " (" + df_a[col_wbs].astype(str) + ")"
-            
-            df_a['Label_Attivita'] = etichette_a
+            df_a['Label_Attivita'] = df_a['ID attività'].astype(str) + " - " + df_a['Nome struttura'] + " (" + df_a['WBS Lavorazione'] + ")"
             for label in df_a['Label_Attivita'].unique():
                 if label in st.session_state.configurazioni_salvate:
                     l_totali = df_a[df_a['Label_Attivita'] == label]['consumo acqua [l]'].sum()
@@ -400,4 +337,3 @@ if st.session_state.risultati_progettazione:
         st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
