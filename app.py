@@ -169,10 +169,16 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         q_col_lav = next((c for c in df_quantita.columns if 'wbs lav' in str(c).lower()), None)
         q_col_mat = next((c for c in df_quantita.columns if 'wbs mat' in str(c).lower()), None)
         
+        # Ricerca rigorosa per evitare di prendere "Densità di massa" anziché la "Massa" totale
         q_col_massa = None
-        for pref in ['massa', 'peso', 'quantit', 'volume']:
-            q_col_massa = next((c for c in df_quantita.columns if pref in str(c).lower()), None)
-            if q_col_massa: break
+        for col in df_quantita.columns:
+            col_lower = str(col).lower().strip()
+            if col_lower == 'massa' or col_lower == 'peso' or 'quantit' in col_lower:
+                q_col_massa = col
+                break
+        if not q_col_massa:
+            # Fallback sul volume se non trova la massa
+            q_col_massa = next((c for c in df_quantita.columns if 'volume' in str(c).lower()), None)
         
         if q_col_lav and q_col_mat and q_col_massa:
             lav_cron = str(wbs_lav).strip() if pd.notna(wbs_lav) else ""
