@@ -26,7 +26,7 @@ if 'risultati_progettazione' not in st.session_state:
 if 'configurazioni_salvate' not in st.session_state:
     st.session_state.configurazioni_salvate = {}
 
-# COLORI GRAFICI (Allineati alla foto fornita)
+# COLORI GRAFICI 
 colori_parametri = {
     'Materiali': "#991b1b", 
     'Rifiuti': "#166534", 
@@ -189,7 +189,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 massa_pulita = pd.to_numeric(massa_str.replace({',': '.'}, regex=True), errors='coerce').fillna(0)
                 quantita_mat = massa_pulita.sum()
     
-    st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}**")
+    st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}** kg")
     
     em_materiali, em_rifiuti, em_trasporti, em_energia, em_acqua, em_macchinari = 0, 0, 0, 0, 0, 0
     
@@ -222,7 +222,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         q_rifiuti = quantita_mat * perc_rifiuti
         em_rifiuti = q_rifiuti * fattore_em_rif
         
-        # Tabella riassuntiva Materiali e Rifiuti
         df_sum_mat = pd.DataFrame({
             "Voce": ["Materiali", "Rifiuti"],
             "Quantità": [f"{quantita_mat:,.2f} kg", f"{q_rifiuti:,.2f} kg"],
@@ -263,7 +262,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             
             em_trasporti = viaggi_tot * 30 * consumo_medio * fattore_carb
             
-            # Tabella riassuntiva Trasporti
             df_sum_tra = pd.DataFrame({
                 "Voce": ["Trasporti"],
                 "Viaggi Stimati": [int(viaggi_tot)],
@@ -304,7 +302,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     giorni_macc = st.number_input("Giorni di lavoro (per macchinario):", min_value=1, value=durata_giorni)
     em_macchinari = fe_macc_8h * num_macc * giorni_macc
     
-    # Tabella riassuntiva Macchinari
     df_sum_mac = pd.DataFrame({
         "Voce": ["Macchinari"],
         "Num. Macchine": [num_macc],
@@ -326,7 +323,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0)
     em_energia = kwh_stimati * fe_energia
     
-    # Tabella riassuntiva Energia
     df_sum_ene = pd.DataFrame({
         "Voce": ["Energia"],
         "Consumo Totale": [f"{kwh_stimati} kWh"],
@@ -347,7 +343,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0)
     em_acqua = litri_stimati * fe_acqua
     
-    # Tabella riassuntiva Acqua
     df_sum_acq = pd.DataFrame({
         "Voce": ["Acqua"],
         "Consumo Totale": [f"{litri_stimati} L"],
@@ -413,6 +408,13 @@ if st.session_state.risultati_progettazione:
     else:
         start_filter, end_filter = min_date, max_date
 
+    st.markdown("#### Opzioni di Visualizzazione")
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        mostra_media_costante = st.checkbox("Visualizza Linea Media Costante", value=False)
+    with col_opt2:
+        mostra_media_mobile = st.checkbox("Visualizza Linea Andamento Medio (Media Mobile)", value=False)
+
     dati_giornalieri = []
     for _, row in df_risultati.iterrows():
         giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
@@ -428,7 +430,7 @@ if st.session_state.risultati_progettazione:
                     "Materiali": row["Materiali"]/n_giorni, "Rifiuti": row["Rifiuti"]/n_giorni,
                     "Macchinari": row["Macchinari"]/n_giorni, "Trasporti": row["Trasporti"]/n_giorni,
                     "Energia": row["Energia"]/n_giorni, "Acqua": row["Acqua"]/n_giorni,
-                    "Totale": row["Totale [kgCO2 eq]"]/n_giorni
+                    "Totale [kgCO2 eq]": row["Totale [kgCO2 eq]"]/n_giorni
                 })
     
     if dati_giornalieri:
@@ -452,22 +454,39 @@ if st.session_state.risultati_progettazione:
         st.markdown("<hr>", unsafe_allow_html=True)
         st.markdown("#### Grafici Settimanali Dettagliati (Passa il mouse sulle barre per vedere l'Attività)")
 
-        # NUOVO GRAFICO: ANDAMENTO COMPLESSIVO (COLORE #111827)
+        # Andamento Complessivo Totale (#111827)
         df_totale_assoluto = df_plot.groupby(['Settimana', 'Attività'])['Emissioni [kgCO2 eq]'].sum().reset_index()
+        df_week_tot = df_totale_assoluto.groupby('Settimana')['Emissioni [kgCO2 eq]'].sum().reset_index()
+        
         fig_totale_assoluto = px.bar(
             df_totale_assoluto, x="Settimana", y="Emissioni [kgCO2 eq]", hover_data=["Attività"],
             title="Andamento Complessivo Totale", color_discrete_sequence=["#111827"]
         )
+        
+        if mostra_media_costante:
+            media_tot = df_week_tot['Emissioni [kgCO2 eq]'].mean()
+            fig_totale_assoluto.add_hline(y=media_tot, line_dash="dash", line_color="#ef4444", annotation_text="Media Costante")
+        if mostra_media_mobile:
+            df_week_tot['Media_Mobile'] = df_week_tot['Emissioni [kgCO2 eq]'].rolling(window=3, min_periods=1).mean()
+            fig_totale_assoluto.add_trace(go.Scatter(x=df_week_tot['Settimana'], y=df_week_tot['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
+            
         st.plotly_chart(fig_totale_assoluto, use_container_width=True)
 
-        # GRAFICO CUMULATO PER PARAMETRI
+        # Andamento Cumulato (Suddiviso per Parametro)
         fig_tot = px.bar(
             df_plot, x="Settimana", y="Emissioni [kgCO2 eq]", color="Parametro", 
             hover_data=["Attività"], title="Andamento Settimanale Cumulato (Suddiviso per Parametro)",
             color_discrete_map=colori_parametri, barmode='stack'
         )
+        
+        if mostra_media_costante:
+            fig_tot.add_hline(y=media_tot, line_dash="dash", line_color="#ef4444", annotation_text="Media Costante")
+        if mostra_media_mobile:
+            fig_tot.add_trace(go.Scatter(x=df_week_tot['Settimana'], y=df_week_tot['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
+            
         st.plotly_chart(fig_tot, use_container_width=True)
 
+        # Singoli Parametri
         st.markdown("##### Dettaglio per Singolo Parametro")
         col_g1, col_g2 = st.columns(2)
         
@@ -475,11 +494,20 @@ if st.session_state.risultati_progettazione:
         for i, param in enumerate(parametri_lista):
             df_param = df_plot[df_plot['Parametro'] == param]
             if not df_param.empty:
+                df_week_param = df_param.groupby('Settimana')['Emissioni [kgCO2 eq]'].sum().reset_index()
+                
                 fig_p = px.bar(
                     df_param, x="Settimana", y="Emissioni [kgCO2 eq]", hover_data=["Attività"],
                     title=f"Emissione: {param}", color="Parametro", color_discrete_map=colori_parametri
                 )
                 fig_p.update_layout(showlegend=False)
+                
+                if mostra_media_costante:
+                    media_p = df_week_param['Emissioni [kgCO2 eq]'].mean()
+                    fig_p.add_hline(y=media_p, line_dash="dash", line_color="#ef4444")
+                if mostra_media_mobile:
+                    df_week_param['Media_Mobile'] = df_week_param['Emissioni [kgCO2 eq]'].rolling(window=3, min_periods=1).mean()
+                    fig_p.add_trace(go.Scatter(x=df_week_param['Settimana'], y=df_week_param['Media_Mobile'], mode='lines', name='Andamento', line=dict(color='#f59e0b', width=2)))
                 
                 if i % 2 == 0: col_g1.plotly_chart(fig_p, use_container_width=True)
                 else: col_g2.plotly_chart(fig_p, use_container_width=True)
