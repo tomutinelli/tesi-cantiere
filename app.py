@@ -150,7 +150,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     if df_quantita is not None and wbs_mat is not None:
         q_col_lav = next((c for c in df_quantita.columns if 'wbs lavorazione' in str(c).lower()), None)
         q_col_mat = next((c for c in df_quantita.columns if 'wbs materiale' in str(c).lower()), None)
-        q_col_massa = next((c for c in df_quantita.columns if any(k in str(c).lower() for k in ['massa', 'quantit', 'volume', 'peso'])), None)
+        q_col_massa = next((c for c in df_quantita.columns if any(k in str(c).lower() for k in ['massa', 'quantit', 'volume', 'peso','Massa', 'Quantit', 'Volume', 'Peso',])), None)
         
         if q_col_lav and q_col_mat and q_col_massa:
             match_q = df_quantita[(df_quantita[q_col_lav].astype(str) == str(wbs_lav)) & (df_quantita[q_col_mat].astype(str) == str(wbs_mat))]
@@ -397,4 +397,4 @@ if st.session_state.risultati_progettazione:
         st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-
+```<br><ElicitationsGroup><br>
