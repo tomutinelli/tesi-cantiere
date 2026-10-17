@@ -397,4 +397,4 @@ if st.session_state.risultati_progettazione:
         st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
-```<br><ElicitationsGroup><br>
+
