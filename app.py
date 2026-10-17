@@ -29,7 +29,7 @@ if 'configurazioni_salvate' not in st.session_state:
 def load_static_data():
     try:
         # Carica i database statici presenti nel repository
-        df_epd = pd.read_csv("epd_materiali.csv", sep=None, engine='python')
+        df_epd = pd.read_csv("epd_materiali.csv", sep=None, engine='python', encoding='latin1')
         df_lci = pd.read_excel("LCI.xlsx", sheet_name=None)
         df_macc = pd.read_excel("macchinari.xlsx")
         return df_epd, df_lci, df_macc
