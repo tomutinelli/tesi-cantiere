@@ -125,7 +125,7 @@ if df_crono is not None:
    
             etichette = df_crono[col_id].astype(str) + " - " + df_crono[col_nome].astype(str)
             if col_struttura: etichette += " | " + df_crono[col_struttura].astype(str)
-            if col_wbs: etichette += " (" + df_crono[col_wbs].astype(str) + ")"
+            
                 
             df_crono['Label_Attivita'] = etichette
             
