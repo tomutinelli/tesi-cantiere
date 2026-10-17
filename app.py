@@ -26,7 +26,7 @@ if 'risultati_progettazione' not in st.session_state:
 if 'configurazioni_salvate' not in st.session_state:
     st.session_state.configurazioni_salvate = {}
 
-# COLORI GRAFICI ORIGINALI (Esatti dal tuo primo file)
+# COLORI GRAFICI ORIGINALI 
 colori_parametri = {
     'Materiali': "#B80D0D", 
     'Rifiuti': "#078303", 
@@ -122,10 +122,8 @@ if df_crono is not None:
             col_wbs = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), None)
             
             etichette = df_crono[col_id].astype(str) + " - " + df_crono[col_nome].astype(str)
-            if col_struttura:
-                etichette += " | " + df_crono[col_struttura].astype(str)
-            if col_wbs:
-                etichette += " (" + df_crono[col_wbs].astype(str) + ")"
+            if col_struttura: etichette += " | " + df_crono[col_struttura].astype(str)
+            if col_wbs: etichette += " (" + df_crono[col_wbs].astype(str) + ")"
                 
             df_crono['Label_Attivita'] = etichette
             
@@ -166,24 +164,34 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     
     quantita_mat = 0
     if df_quantita is not None and wbs_mat is not None:
-        q_col_lav = next((c for c in df_quantita.columns if 'wbs lavorazione' in str(c).lower()), None)
-        q_col_mat = next((c for c in df_quantita.columns if 'wbs materiale' in str(c).lower()), None)
-        q_col_massa = next((c for c in df_quantita.columns if any(k in str(c).lower() for k in ['massa', 'quantit', 'volume', 'peso'])), None)
+        q_col_lav = next((c for c in df_quantita.columns if 'wbs lav' in str(c).lower()), None)
+        q_col_mat = next((c for c in df_quantita.columns if 'wbs mat' in str(c).lower()), None)
+        
+        # Filtro intelligente per trovare la colonna giusta, dando priorità alla massa/peso rispetto al volume
+        q_col_massa = None
+        for pref in ['massa', 'peso', 'quantit', 'volume']:
+            q_col_massa = next((c for c in df_quantita.columns if pref in str(c).lower()), None)
+            if q_col_massa: break
         
         if q_col_lav and q_col_mat and q_col_massa:
-            # FIX: Aggiunto .str.strip() per rimuovere spazi nascosti dai WBS
-            mask = (df_quantita[q_col_lav].astype(str).str.strip() == str(wbs_lav).strip()) & \
-                   (df_quantita[q_col_mat].astype(str).str.strip() == str(wbs_mat).strip())
+            # Assicuriamoci che i codici di confronto siano stringhe pure senza spazi vuoti o "nan" testuali
+            lav_cron = str(wbs_lav).strip() if pd.notna(wbs_lav) else ""
+            mat_cron = str(wbs_mat).strip() if pd.notna(wbs_mat) else ""
+            
+            lav_q_series = df_quantita[q_col_lav].fillna('').astype(str).str.strip()
+            mat_q_series = df_quantita[q_col_mat].fillna('').astype(str).str.strip()
+            
+            mask = (lav_q_series == lav_cron) & (mat_q_series == mat_cron)
             match_q = df_quantita[mask]
             
             if not match_q.empty:
+                # Ripuliamo i valori rimuovendo le lettere (come "kg" o "m3") ed eventuali spazi, tenendo i numeri
                 massa_str = match_q[q_col_massa].astype(str).str.replace(r'[^\d,\.-]', '', regex=True)
                 massa_pulita = pd.to_numeric(massa_str.replace({',': '.'}, regex=True), errors='coerce').fillna(0)
-                quantita_mat = massa_pulita.sum()
+                quantita_mat = massa_pulita.sum()  # SOMMA AUTOMATICA DI TUTTE LE RIGHE TROVATE
     
     st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}**")
     
-    # RIMOSSO IL st.form() per permettere l'aggiornamento dinamico delle tabelle
     em_materiali, em_rifiuti, em_trasporti, em_energia, em_acqua, em_macchinari = 0, 0, 0, 0, 0, 0
     
     # MATERIALI E RIFIUTI
@@ -192,14 +200,15 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         materiale_scelto = st.selectbox("Seleziona Tipo Materiale (filtro categoria):", df_epd['Materiale'].dropna().unique())
         df_epd_filtrato = df_epd[df_epd['Materiale'] == materiale_scelto]
         
+        # TABELLA EPD CON COLONNE CORRETTE PER EVITARE IL KEY ERROR
         st.dataframe(
-            df_epd_filtrato[['Materiale', 'Produttore', 'Fattore emissivo', 'Trattamento rifiuti', 'Link PDF']],
-            column_config={"Link PDF": st.column_config.LinkColumn("Link EPD")}, hide_index=True
+            df_epd_filtrato[['Materiale', 'Produttore', 'Fattore di emissione [kg CO2 eq / kg]', 'C2-C4 [kg CO2 eq / kg]', 'EPD']],
+            column_config={"EPD": st.column_config.LinkColumn("Link EPD")}, hide_index=True
         )
         
         scelta_specifica = st.selectbox("Scegli il prodotto specifico per il calcolo:", df_epd_filtrato['Produttore'])
-        fattore_em_mat = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica]['Fattore emissivo'].values[0]
-        fattore_em_rif = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica]['Trattamento rifiuti'].values[0]
+        fattore_em_mat = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica]['Fattore di emissione [kg CO2 eq / kg]'].values[0]
+        fattore_em_rif = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica]['C2-C4 [kg CO2 eq / kg]'].values[0]
         
         fattore_em_mat = float(str(fattore_em_mat).replace(',', '.'))
         fattore_em_rif = float(str(fattore_em_rif).replace(',', '.'))
@@ -228,7 +237,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         carb_trasporto = None
         consumo_medio = 0
         
-    # MACCHINARI (Ora si aggiorna dinamicamente!)
+    # MACCHINARI
     st.markdown("#### Macchinari")
     macchinario = st.selectbox("Scegli Macchinario base:", df_macc['Macchinario'].unique())
     df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
@@ -259,7 +268,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0)
     em_acqua = litri_stimati * fe_acqua
     
-    # TASTO SALVATAGGIO
     if st.button("Salva Calcolo per questa Attività", use_container_width=True):
         totale_eq = em_materiali + em_rifiuti + em_macchinari + em_trasporti + em_energia + em_acqua
         
@@ -294,25 +302,18 @@ if st.session_state.risultati_progettazione:
     st.subheader("3. Risultati Fase di Progettazione")
     
     df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
-    
-    # Mostra tabella a schermo
     st.dataframe(df_risultati, use_container_width=True)
     
     gwp_totale = df_risultati["Totale [kgCO2 eq]"].sum()
     st.markdown(f"<div style='padding:15px; background-color:#e8f4f8; border-left: 5px solid #2980b9; border-radius:4px;'><h4>GWP Totale Cantiere (Stima): {gwp_totale:,.2f} kg CO₂ eq</h4></div>", unsafe_allow_html=True)
     
-    # -----------------------------------
-    # AGGIUNTA FILTRO CALENDARIO
-    # -----------------------------------
     st.markdown("#### Filtro Temporale Grafici")
     min_date = df_risultati['Data Inizio'].min()
     max_date = df_risultati['Data Fine'].max()
     
     date_range = st.date_input(
         "Seleziona l'intervallo temporale da visualizzare nei grafici (es. una specifica settimana):", 
-        value=(min_date, max_date), 
-        min_value=min_date, 
-        max_value=max_date
+        value=(min_date, max_date), min_value=min_date, max_value=max_date
     )
     
     if isinstance(date_range, tuple) and len(date_range) == 2:
@@ -320,7 +321,6 @@ if st.session_state.risultati_progettazione:
     else:
         start_filter, end_filter = min_date, max_date
 
-    # Generazione dati per i grafici (Esplosione giornaliera filtrata)
     dati_giornalieri = []
     for _, row in df_risultati.iterrows():
         giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
@@ -330,7 +330,7 @@ if st.session_state.risultati_progettazione:
             g_date = g.date()
             if start_filter <= g_date <= end_filter:
                 dati_giornalieri.append({
-                    "Attività": row['Attività'], # Manteniamo il nome dell'attività per il tooltip (hover)
+                    "Attività": row['Attività'], 
                     "Data": g_date, 
                     "Settimana": g.strftime('%Y-W%V'),
                     "Materiali": row["Materiali"]/n_giorni, "Rifiuti": row["Rifiuti"]/n_giorni,
@@ -341,20 +341,15 @@ if st.session_state.risultati_progettazione:
     
     if dati_giornalieri:
         df_giornaliero = pd.DataFrame(dati_giornalieri)
-        
-        # Facciamo il "melt" (trasformazione) del dataframe per prepararlo ai grafici disaggregati
         df_melted = df_giornaliero.melt(
             id_vars=['Settimana', 'Attività'], 
             value_vars=['Materiali', 'Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua'], 
-            var_name='Parametro', 
-            value_name='Emissioni [kgCO2 eq]'
+            var_name='Parametro', value_name='Emissioni [kgCO2 eq]'
         )
         
-        # Raggruppiamo i dati per la visualizzazione
         df_plot = df_melted.groupby(['Settimana', 'Parametro', 'Attività'])['Emissioni [kgCO2 eq]'].sum().reset_index()
         df_plot = df_plot[df_plot['Emissioni [kgCO2 eq]'] > 0]
         
-        # 1. Grafico a Torta Globale (non filtrato dal calendario, riferito all'intero cantiere)
         df_pie = pd.DataFrame({
             "Parametro": ["Materiali", "Rifiuti", "Macchinari", "Trasporti", "Energia", "Acqua"],
             "Valore": [df_risultati["Materiali"].sum(), df_risultati["Rifiuti"].sum(), df_risultati["Macchinari"].sum(), df_risultati["Trasporti"].sum(), df_risultati["Energia"].sum(), df_risultati["Acqua"].sum()]
@@ -365,7 +360,6 @@ if st.session_state.risultati_progettazione:
         st.markdown("<hr>", unsafe_allow_html=True)
         st.markdown("#### Grafici Settimanali Dettagliati (Passa il mouse sulle barre per vedere l'Attività)")
 
-        # 2. Grafico Settimanale Complessivo
         fig_tot = px.bar(
             df_plot, x="Settimana", y="Emissioni [kgCO2 eq]", color="Parametro", 
             hover_data=["Attività"], title="Andamento Settimanale Cumulato",
@@ -373,7 +367,6 @@ if st.session_state.risultati_progettazione:
         )
         st.plotly_chart(fig_tot, use_container_width=True)
 
-        # 3. Grafici Separati per singolo Parametro
         st.markdown("##### Dettaglio per Singolo Parametro")
         col_g1, col_g2 = st.columns(2)
         
@@ -381,17 +374,14 @@ if st.session_state.risultati_progettazione:
         for i, param in enumerate(parametri_lista):
             df_param = df_plot[df_plot['Parametro'] == param]
             if not df_param.empty:
-                # Creiamo il grafico, colorando la barra col colore fisso del parametro
                 fig_p = px.bar(
                     df_param, x="Settimana", y="Emissioni [kgCO2 eq]", hover_data=["Attività"],
                     title=f"Emissione: {param}", color="Parametro", color_discrete_map=colori_parametri
                 )
-                fig_p.update_layout(showlegend=False) # Nascondiamo la legenda perché è ovvia
+                fig_p.update_layout(showlegend=False)
                 
-                if i % 2 == 0:
-                    col_g1.plotly_chart(fig_p, use_container_width=True)
-                else:
-                    col_g2.plotly_chart(fig_p, use_container_width=True)
+                if i % 2 == 0: col_g1.plotly_chart(fig_p, use_container_width=True)
+                else: col_g2.plotly_chart(fig_p, use_container_width=True)
     else:
         st.warning("Non ci sono attività nel periodo selezionato dal filtro.")
 
