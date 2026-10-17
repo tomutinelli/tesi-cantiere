@@ -169,7 +169,10 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         q_col_lav = next((c for c in df_quantita.columns if 'wbs lav' in str(c).lower()), None)
         q_col_mat = next((c for c in df_quantita.columns if 'wbs mat' in str(c).lower()), None)
         
-        # Ricerca rigorosa per evitare di prendere "Densità di massa" anziché la "Massa" totale
+        # Individuazione della colonna della struttura nel file dei materiali
+        q_col_struttura = next((c for c in df_quantita.columns if 'struttura' in str(c).lower()), None)
+        
+        # Ricerca rigorosa della colonna della massa/quantità
         q_col_massa = None
         for col in df_quantita.columns:
             col_lower = str(col).lower().strip()
@@ -177,23 +180,31 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 q_col_massa = col
                 break
         if not q_col_massa:
-            # Fallback sul volume se non trova la massa
             q_col_massa = next((c for c in df_quantita.columns if 'volume' in str(c).lower()), None)
         
         if q_col_lav and q_col_mat and q_col_massa:
             lav_cron = str(wbs_lav).strip() if pd.notna(wbs_lav) else ""
             mat_cron = str(wbs_mat).strip() if pd.notna(wbs_mat) else ""
+            struttura_cron = str(nome_strutt).strip() if pd.notna(nome_strutt) else ""
             
             lav_q_series = df_quantita[q_col_lav].fillna('').astype(str).str.strip()
             mat_q_series = df_quantita[q_col_mat].fillna('').astype(str).str.strip()
             
+            # Creazione della maschera base WBS
             mask = (lav_q_series == lav_cron) & (mat_q_series == mat_cron)
+            
+            # Se nel file dei materiali esiste la colonna della struttura, filtriamo anche per quella
+            if q_col_struttura and struttura_cron:
+                struttura_q_series = df_quantita[q_col_struttura].fillna('').astype(str).str.strip()
+                mask = mask & (struttura_q_series == struttura_cron)
+            
             match_q = df_quantita[mask]
             
             if not match_q.empty:
                 massa_str = match_q[q_col_massa].astype(str).str.replace(r'[^\d,\.-]', '', regex=True)
                 massa_pulita = pd.to_numeric(massa_str.replace({',': '.'}, regex=True), errors='coerce').fillna(0)
                 quantita_mat = massa_pulita.sum()
+
     
     st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}** kg")
     
