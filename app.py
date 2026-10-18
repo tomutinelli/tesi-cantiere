@@ -456,7 +456,7 @@ if st.session_state.risultati_progettazione:
             var_name='Parametro', value_name='Emissioni [kgCO₂ eq]'
         )
         
-        df_plot = df_melted.groupby(['Settimana', 'Parametro', 'Attività'])['Emissioni [kgCO2 eq]'].sum().reset_index()
+        df_plot = df_melted.groupby(['Settimana', 'Parametro', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
         df_plot = df_plot[df_plot['Emissioni [kgCO₂ eq]'] > 0]
         
         df_pie = pd.DataFrame({
