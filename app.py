@@ -472,7 +472,7 @@ if st.session_state.risultati_progettazione:
         # NUOVO GRAFICO: ANDAMENTO COMPLESSIVO (COLORE #111827)
         df_totale_assoluto = df_plot.groupby(['Settimana', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
         fig_totale_assoluto = px.bar(
-            df_totale_assoluto, x="Settimana", y="Emissioni [kgCO2 eq]", hover_data=["Attività"],
+            df_totale_assoluto, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
             title="Andamento Complessivo Totale", color_discrete_sequence=["#111827"]
         )
         st.plotly_chart(fig_totale_assoluto, use_container_width=True)
