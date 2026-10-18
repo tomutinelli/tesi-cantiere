@@ -413,7 +413,7 @@ if st.session_state.risultati_progettazione:
     df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
     st.dataframe(df_risultati, use_container_width=True)
     
-    gwp_totale = df_risultati["Totale [kgCO2 eq]"].sum()
+    gwp_totale = df_risultati["Totale [kgCO₂ eq]"].sum()
     st.markdown(f"<div style='padding:15px; background-color:#e8f4f8; border-left: 5px solid #2980b9; border-radius:4px;'><h4>GWP Totale Cantiere (Stima): {gwp_totale:,.2f} kg CO₂ eq</h4></div>", unsafe_allow_html=True)
     
     st.markdown("#### Filtro Temporale Grafici")
@@ -493,7 +493,7 @@ if st.session_state.risultati_progettazione:
             df_param = df_plot[df_plot['Parametro'] == param]
             if not df_param.empty:
                 fig_p = px.bar(
-                    df_param, x="Settimana", y="Emissioni [kgCO2 eq]", hover_data=["Attività"],
+                    df_param, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
                     title=f"Emissione: {param}", color="Parametro", color_discrete_map=colori_parametri
                 )
                 fig_p.update_layout(showlegend=False)
