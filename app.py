@@ -439,7 +439,7 @@ if st.session_state.risultati_progettazione:
             g_date = g.date()
             if start_filter <= g_date <= end_filter:
                 dati_giornalieri.append({
-                    "Attività": row['Attività'], 
+                    #"Attività": row['Attività'], 
                     "Data": g_date, 
                     "Settimana": g.strftime('%Y-W%V'),
                     "Materiali": row["Materiali [kgCO₂ eq]"]/n_giorni, "Rifiuti": row["Rifiuti [kgCO₂ eq]"]/n_giorni,
