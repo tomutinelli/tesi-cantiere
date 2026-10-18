@@ -242,9 +242,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         # Tabella riassuntiva Materiali e Rifiuti
         df_sum_mat = pd.DataFrame({
             "Voce": ["Materiali", "Rifiuti"],
-            "Quantità": [f"{quantita_mat:,.2f} kg", f"{q_rifiuti:,.2f} kg"],
-            "Fattore Emissivo": [f"{fattore_em_mat:,.4f}", f"{fattore_em_rif:,.4f}"],
-            "Emissioni [kgCO2 eq]": [f"{em_materiali:,.2f}", f"{em_rifiuti:,.2f}"]
+            "Quantità [kg]": [f"{quantita_mat:,.2f} kg", f"{q_rifiuti:,.2f}"],
+            "Fattore Emissivo [kgCO₂ eq/kg]": [f"{fattore_em_mat:,.4f}", f"{fattore_em_rif:,.4f}"],
+            "Emissioni [kgCO₂ eq]": [f"{em_materiali:,.2f}", f"{em_rifiuti:,.2f}"]
         })
         st.markdown("**Riepilogo Materiali e Rifiuti:**")
         st.dataframe(df_sum_mat, hide_index=True)
@@ -284,10 +284,10 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             df_sum_tra = pd.DataFrame({
                 "Voce": ["Trasporti"],
                 "Viaggi Stimati": [int(viaggi_tot)],
-                "Distanza": ["30 km/viaggio"],
-                "Consumo Mezzo": [f"{consumo_medio} kg/km"],
-                "Fattore Emissivo": [f"{fattore_carb:,.4f}"],
-                "Emissioni [kgCO2 eq]": [f"{em_trasporti:,.2f}"]
+                "Distanza Stimata [km]": ["30"],
+                "Consumo Carburante Mezzo [kg/km]": [f"{consumo_medio}"],
+                "Fattore Emissivo [kgCO₂ eq/kg]": [f"{fattore_carb:,.4f}"],
+                "Emissioni [kgCO₂ eq]": [f"{em_trasporti:,.2f}"]
             })
             st.markdown("**Riepilogo Trasporti:**")
             st.dataframe(df_sum_tra, hide_index=True)
@@ -326,8 +326,8 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         "Voce": ["Macchinari"],
         "Num. Macchine": [num_macc],
         "Giorni": [giorni_macc],
-        "Fattore Emissivo (8h)": [f"{fe_macc_8h:,.2f}"],
-        "Emissioni [kgCO2 eq]": [f"{em_macchinari:,.2f}"]
+        "Fattore Emissivo [kgCO₂ eq/8h lav]": [f"{fe_macc_8h:,.2f}"],
+        "Emissioni [kgCO₂ eq]": [f"{em_macchinari:,.2f}"]
     })
     st.markdown("**Riepilogo Macchinari:**")
     st.dataframe(df_sum_mac, hide_index=True)
@@ -346,9 +346,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     # Tabella riassuntiva Energia
     df_sum_ene = pd.DataFrame({
         "Voce": ["Energia"],
-        "Consumo Totale": [f"{kwh_stimati} kWh"],
-        "Fattore Emissivo": [f"{fe_energia:,.4f}"],
-        "Emissioni [kgCO2 eq]": [f"{em_energia:,.2f}"]
+        "Consumo Totale [kWh]": [f"{kwh_stimati}"],
+        "Fattore Emissivo [kgCO₂ eq/kWh]": [f"{fe_energia:,.4f}"],
+        "Emissioni [kgCO₂ eq]": [f"{em_energia:,.2f}"]
     })
     st.markdown("**Riepilogo Energia:**")
     st.dataframe(df_sum_ene, hide_index=True)
@@ -367,9 +367,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     # Tabella riassuntiva Acqua
     df_sum_acq = pd.DataFrame({
         "Voce": ["Acqua"],
-        "Consumo Totale": [f"{litri_stimati} L"],
-        "Fattore Emissivo": [f"{fe_acqua:,.4f}"],
-        "Emissioni [kgCO2 eq]": [f"{em_acqua:,.2f}"]
+        "Consumo Totale [l]": [f"{litri_stimati}"],
+        "Fattore Emissivo [kgCO₂ eq/l]": [f"{fe_acqua:,.4f}"],
+        "Emissioni [kgCO₂ eq]": [f"{em_acqua:,.2f}"]
     })
     st.markdown("**Riepilogo Acqua:**")
     st.dataframe(df_sum_acq, hide_index=True)
@@ -384,9 +384,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             "Durata": durata_giorni, 
             "Data Inizio": row_att['Data_Inizio_Calc'].date(), 
             "Data Fine": row_att['Data_Fine_Calc'].date(),
-            "Materiali": em_materiali, "Rifiuti": em_rifiuti, 
-            "Macchinari": em_macchinari, "Trasporti": em_trasporti,
-            "Energia": em_energia, "Acqua": em_acqua, 
+            "Materiali [kgCO₂ eq]": em_materiali, "Rifiuti [kgCO₂ eq]": em_rifiuti, 
+            "Macchinari [kgCO₂ eq]": em_macchinari, "Trasporti [kgCO₂ eq]": em_trasporti,
+            "Energia [kgCO₂ eq]": em_energia, "Acqua [kgCO₂ eq]": em_acqua, 
             "Totale [kgCO2 eq]": totale_eq
         }
         
