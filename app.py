@@ -387,7 +387,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             "Materiali [kgCO₂ eq]": em_materiali, "Rifiuti [kgCO₂ eq]": em_rifiuti, 
             "Macchinari [kgCO₂ eq]": em_macchinari, "Trasporti [kgCO₂ eq]": em_trasporti,
             "Energia [kgCO₂ eq]": em_energia, "Acqua [kgCO₂ eq]": em_acqua, 
-            "Totale [kgCO2 eq]": totale_eq
+            "Totale [kgCO₂ eq]": totale_eq
         }
         
         st.session_state.configurazioni_salvate[row_att['Label_Attivita']] = {
@@ -442,10 +442,10 @@ if st.session_state.risultati_progettazione:
                     "Attività": row['Attività'], 
                     "Data": g_date, 
                     "Settimana": g.strftime('%Y-W%V'),
-                    "Materiali": row["Materiali"]/n_giorni, "Rifiuti": row["Rifiuti"]/n_giorni,
-                    "Macchinari": row["Macchinari"]/n_giorni, "Trasporti": row["Trasporti"]/n_giorni,
-                    "Energia": row["Energia"]/n_giorni, "Acqua": row["Acqua"]/n_giorni,
-                    "Totale": row["Totale [kgCO2 eq]"]/n_giorni
+                    "Materiali": row["Materiali [kgCO₂ eq]"]/n_giorni, "Rifiuti": row["Rifiuti [kgCO₂ eq]"]/n_giorni,
+                    "Macchinari": row["Macchinari [kgCO₂ eq]"]/n_giorni, "Trasporti": row["Trasporti [kgCO₂ eq]"]/n_giorni,
+                    "Energia": row["Energia [kgCO₂ eq]"]/n_giorni, "Acqua": row["Acqua [kgCO₂ eq]"]/n_giorni,
+                    "Totale": row["Totale [kgCO₂ eq]"]/n_giorni
                 })
     
     if dati_giornalieri:
@@ -453,11 +453,11 @@ if st.session_state.risultati_progettazione:
         df_melted = df_giornaliero.melt(
             id_vars=['Settimana', 'Attività'], 
             value_vars=['Materiali', 'Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua'], 
-            var_name='Parametro', value_name='Emissioni [kgCO2 eq]'
+            var_name='Parametro', value_name='Emissioni [kgCO₂ eq]'
         )
         
         df_plot = df_melted.groupby(['Settimana', 'Parametro', 'Attività'])['Emissioni [kgCO2 eq]'].sum().reset_index()
-        df_plot = df_plot[df_plot['Emissioni [kgCO2 eq]'] > 0]
+        df_plot = df_plot[df_plot['Emissioni [kgCO₂ eq]'] > 0]
         
         df_pie = pd.DataFrame({
             "Parametro": ["Materiali", "Rifiuti", "Macchinari", "Trasporti", "Energia", "Acqua"],
@@ -479,7 +479,7 @@ if st.session_state.risultati_progettazione:
 
         # GRAFICO CUMULATO PER PARAMETRI
         fig_tot = px.bar(
-            df_plot, x="Settimana", y="Emissioni [kgCO2 eq]", color="Parametro", 
+            df_plot, x="Settimana", y="Emissioni [kgCO₂ eq]", color="Parametro", 
             hover_data=["Attività"], title="Andamento Settimanale Cumulato (Suddiviso per Parametro)",
             color_discrete_map=colori_parametri, barmode='stack'
         )
@@ -582,7 +582,7 @@ if st.session_state.risultati_progettazione:
         df_comp = pd.DataFrame({
             "Fase": ["Progettazione"]*len(df_risultati) + ["Cantiere"]*len(df_cantiere),
             "Attività": pd.concat([df_risultati['Attività'], df_cantiere['Attività']]),
-            "Totale Emissioni": pd.concat([df_risultati['Totale [kgCO2 eq]'], df_cantiere['Totale [kgCO2 eq]']])
+            "Totale Emissioni": pd.concat([df_risultati['Totale [kgCO₂ eq]'], df_cantiere['Totale [kgCO₂ eq]']])
         })
         fig_comp = px.bar(df_comp, x="Attività", y="Totale Emissioni", color="Fase", barmode="group", title="Confronto Emissioni per Singola Attività")
         st.plotly_chart(fig_comp, use_container_width=True)
