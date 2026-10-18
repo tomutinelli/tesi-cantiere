@@ -1,0 +1,11 @@
+﻿Abaco dei pacchetti stradali CSV,,,,,,,,
+Nome struttura,WBS Lavorazione,WBS Materiale,Nome,Densità di massa,Volume,Massa
+,,,,,
+FM2,Ss_30_14_05,Pr_20_31_01_39,Binder (bitume),2260.00 /m³,253.75 m³,573481.56 
+FM2,Ss_30_14_05,Pr_35_31_05_38,Manto di usura (asfalto),2260.00 /m³,169.17 m³,382321.04 
+FM2,Ss_30_14_05,Pr_30_31_76_14,Impermeabilizzante (bitume),2260.00 /m³,42.29 m³,95580.26 
+ROT,Ss_30_14_05,Pr_20_31_01_39,Binder (bitume),2260.00 /m³,249.92 m³,564818.12 
+ROT,Ss_30_14_05,Pr_35_31_05_38,Manto di usura (asfalto),2260.00 /m³,166.61 m³,376545.41 
+ROT,Ss_30_14_05,Pr_15_31_26_18,Misto stabilizzato (cemento),2000.00 /m³,1041.33 m³,2082662.67 
+ROT,Ss_30_14_05,Pr_35_31_05_03,Conglomerato bituminoso,2260.00 /m³,624.80 m³,1412045.29 
+FM2,Pr_20_85_14_16,Pr_20_31_16_92,Calcestruzzo impalcato C35/45,2345.00 /m³,1184.18 m³,2776902.58 
