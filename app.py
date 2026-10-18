@@ -461,7 +461,7 @@ if st.session_state.risultati_progettazione:
         
         df_pie = pd.DataFrame({
             "Parametro": ["Materiali", "Rifiuti", "Macchinari", "Trasporti", "Energia", "Acqua"],
-            "Valore": [df_risultati["Materiali"].sum(), df_risultati["Rifiuti"].sum(), df_risultati["Macchinari"].sum(), df_risultati["Trasporti"].sum(), df_risultati["Energia"].sum(), df_risultati["Acqua"].sum()]
+            "Valore": [df_risultati["Materiali [kgCO₂ eq]"].sum(), df_risultati["Rifiuti [kgCO₂ eq]"].sum(), df_risultati["Macchinari [kgCO₂ eq]"].sum(), df_risultati["Trasporti [kgCO₂ eq]"].sum(), df_risultati["Energia [kgCO₂ eq]"].sum(), df_risultati["Acqua [kgCO₂ eq]"].sum()]
         })
         fig_pie = px.pie(df_pie, names="Parametro", values="Valore", title="Incidenza Percentuale Totale Cantiere", color="Parametro", color_discrete_map=colori_parametri, hole=0.4)
         st.plotly_chart(fig_pie, use_container_width=True)
