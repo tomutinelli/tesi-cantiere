@@ -301,7 +301,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     # MACCHINARI
     st.markdown("---")
     st.markdown("#### Macchinari")
-    col_mac_fe = next((c for c in df_macc.columns if 'Emission' in str(c).lower()), df_macc.columns[3] if len(df_macc.columns) > 3 else None)
+    col_mac_fe = next((c for c in df_macc.columns if 'emission' in str(c).lower()), df_macc.columns[3] if len(df_macc.columns) > 3 else None)
     
     macchinario = st.selectbox("Scegli Macchinario base:", df_macc['Macchinario'].unique())
     df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
