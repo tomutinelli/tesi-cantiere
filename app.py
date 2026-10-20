@@ -26,7 +26,7 @@ if 'risultati_progettazione' not in st.session_state:
 if 'configurazioni_salvate' not in st.session_state:
     st.session_state.configurazioni_salvate = {}
 
-# COLORI GRAFICI
+# COLORI GRAFICI (Allineati alla foto fornita)
 colori_parametri = {
     'Materiali': "#991b1b", 
     'Rifiuti': "#166534", 
@@ -73,6 +73,7 @@ if err_msg:
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("1. Caricamento File di Progetto")
 
+# RIQUADRO INFORMATIVO 1
 st.markdown("""
 <div style='background-color: #eef2f3; padding: 15px; border-left: 5px solid #2980b9; border-radius: 4px; margin-bottom: 20px;'>
     <strong>Istruzioni di Formattazione CSV (Fase di Progetto):</strong>
@@ -138,6 +139,7 @@ if df_crono is not None:
             etichette = df_crono[col_id].astype(str) + " - " + df_crono[col_nome].astype(str)
             if col_struttura: etichette += " | " + df_crono[col_struttura].astype(str)
             
+                
             df_crono['Label_Attivita'] = etichette
             
             if df_quantita is not None:
@@ -179,6 +181,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     if df_quantita is not None and wbs_mat is not None:
         q_col_lav = next((c for c in df_quantita.columns if 'wbs lav' in str(c).lower()), None)
         q_col_mat = next((c for c in df_quantita.columns if 'wbs mat' in str(c).lower()), None)
+        
         q_col_struttura = next((c for c in df_quantita.columns if 'struttura' in str(c).lower()), None)
         
         q_col_massa = None
@@ -199,16 +202,19 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             mat_q_series = df_quantita[q_col_mat].fillna('').astype(str).str.strip()
             
             mask = (lav_q_series == lav_cron) & (mat_q_series == mat_cron)
+            
             if q_col_struttura and struttura_cron:
                 struttura_q_series = df_quantita[q_col_struttura].fillna('').astype(str).str.strip()
                 mask = mask & (struttura_q_series == struttura_cron)
             
             match_q = df_quantita[mask]
+            
             if not match_q.empty:
                 massa_str = match_q[q_col_massa].astype(str).str.replace(r'[^\d,\.-]', '', regex=True)
                 massa_pulita = pd.to_numeric(massa_str.replace({',': '.'}, regex=True), errors='coerce').fillna(0)
                 quantita_mat = massa_pulita.sum()
 
+    
     st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}** kg")
     
     em_materiali, em_rifiuti, em_trasporti, em_energia, em_acqua, em_macchinari = 0, 0, 0, 0, 0, 0
@@ -237,6 +243,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         fattore_em_rif = float(str(fattore_em_rif).replace(',', '.'))
         
         em_materiali = quantita_mat * fattore_em_mat
+        
         perc_rifiuti = st.number_input("% di rifiuti stimata (sfrido):", min_value=0.0, max_value=100.0, value=0.0) / 100
         q_rifiuti = quantita_mat * perc_rifiuti
         em_rifiuti = q_rifiuti * fattore_em_rif
@@ -255,6 +262,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         st.markdown("#### Trasporti")
         if 'Trasporti' in df_lci:
             df_t_sheet = df_lci['Trasporti']
+            
             df_t_emissions = df_t_sheet.iloc[0:9].copy()
             df_t_emissions.columns = ['Tipologia', 'Carburante', 'Fattore_Emissione']
             
@@ -268,6 +276,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             viaggi_tot_stimati = int(viaggi_mat + viaggi_rif)
             
             num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=1, value=1, step=1)
+            
             em_trasporti = 0
             tot_km_progetto = 0
             dati_trasporto_tabella = []
@@ -303,11 +312,13 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 })
 
             fe_trasporti_medio = (em_trasporti / tot_km_progetto) if tot_km_progetto > 0 else 0
+            
             st.markdown("**Riepilogo Trasporti:**")
             st.dataframe(pd.DataFrame(dati_trasporto_tabella), hide_index=True)
             st.write(f"**Totale Emissioni Trasporti:** {em_trasporti:,.2f} kgCO₂ eq")
+            
     else:
-        st.warning("Nessun materiale trovato per questa attività (Quantità = 0).")
+        st.warning("Nessun materiale trovato per questa attività (Quantità = 0). Sezioni Materiali, Rifiuti e Trasporti avranno emissioni pari a 0.")
         fe_trasporti_medio = 0
         
     # MACCHINARI MULTIPLI
@@ -318,6 +329,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     durata_giorni = int(row_att[col_durata]) if col_durata else 1
     
     num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=1, value=1, step=1)
+    
     em_macchinari = 0
     dati_macchinari_tabella = []
     
@@ -333,10 +345,13 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 column_config={col_macc_link: st.column_config.LinkColumn("Link Schede Tecniche")},
                 hide_index=True
             )
+            
             macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}")
             fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore][col_mac_fe].values[0]).replace(',', '.'))
         else:
+            st.warning("Impossibile trovare la colonna delle emissioni nel file macchinari.")
             fe_macc_8h = 0.0
+            macc_produttore = "N/A"
             
         col_m1, col_m2 = st.columns(2)
         with col_m1:
@@ -370,6 +385,15 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0)
     em_energia = kwh_stimati * fe_energia
     
+    df_sum_ene = pd.DataFrame({
+        "Voce": ["Energia"],
+        "Consumo Totale [kWh]": [f"{kwh_stimati}"],
+        "Fattore Emissivo [kgCO₂ eq/kWh]": [f"{fe_energia:,.4f}"],
+        "Emissioni [kgCO₂ eq]": [f"{em_energia:,.2f}"]
+    })
+    st.markdown("**Riepilogo Energia:**")
+    st.dataframe(df_sum_ene, hide_index=True)
+    
     # ACQUA
     st.markdown("---")
     st.markdown("#### Acqua")
@@ -380,6 +404,15 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     fe_acqua = float(str(df_lci['Acqua'][df_lci['Acqua'][col_acqua_nome] == tech_acqua][col_acqua_fe].values[0]).replace(',', '.'))
     litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0)
     em_acqua = litri_stimati * fe_acqua
+    
+    df_sum_acq = pd.DataFrame({
+        "Voce": ["Acqua"],
+        "Consumo Totale [l]": [f"{litri_stimati}"],
+        "Fattore Emissivo [kgCO₂ eq/l]": [f"{fe_acqua:,.4f}"],
+        "Emissioni [kgCO₂ eq]": [f"{em_acqua:,.2f}"]
+    })
+    st.markdown("**Riepilogo Acqua:**")
+    st.dataframe(df_sum_acq, hide_index=True)
     
     st.markdown("---")
     if st.button("Salva Calcolo per questa Attività", use_container_width=True):
@@ -399,7 +432,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         
         st.session_state.configurazioni_salvate[row_att['Label_Attivita']] = {
             "Carburante": "Mix" if 'Trasporti' in df_lci else None,
-            "Consumo_mezzo": 1.0 if 'Trasporti' in df_lci else 0,
+            "Consumo_mezzo": 1.0 if 'Trasporti' in df_lci else 0, # Impostato a 1, assorbe il fattore effettivo calcolato giù
             "FE_Trasporti": fe_trasporti_medio if 'Trasporti' in df_lci else 0,
             "Energia": tech_energia, "FE_Energia": fe_energia,
             "Acqua": tech_acqua, "FE_Acqua": fe_acqua
@@ -420,6 +453,7 @@ if st.session_state.risultati_progettazione:
     df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
     st.dataframe(df_risultati, use_container_width=True)
     
+    # SPLIT TOTALI PROGETTAZIONE
     gwp_totale = df_risultati["Totale [kgCO₂ eq]"].sum()
     gwp_embodied = df_risultati["Materiali [kgCO₂ eq]"].sum()
     gwp_altre = gwp_totale - gwp_embodied
@@ -442,7 +476,10 @@ if st.session_state.risultati_progettazione:
     max_date = df_risultati['Data Fine'].max()
     
     with col_fil1:
-        date_range = st.date_input("Seleziona l'intervallo temporale:", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+        date_range = st.date_input(
+            "Seleziona l'intervallo temporale:", 
+            value=(min_date, max_date), min_value=min_date, max_value=max_date
+        )
     with col_fil2:
         opzione_linee = st.selectbox("Linee di Tendenza:", ["Nessuna", "Media Costante", "Andamento Medio (Media Mobile)", "Entrambe"])
     with col_fil3:
@@ -451,17 +488,23 @@ if st.session_state.risultati_progettazione:
     mostra_media_costante = opzione_linee in ["Media Costante", "Entrambe"]
     mostra_media_mobile = opzione_linee in ["Andamento Medio (Media Mobile)", "Entrambe"]
     
-    start_filter, end_filter = date_range if isinstance(date_range, tuple) and len(date_range) == 2 else (min_date, max_date)
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start_filter, end_filter = date_range
+    else:
+        start_filter, end_filter = min_date, max_date
 
     dati_giornalieri = []
     for _, row in df_risultati.iterrows():
         giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
         n_giorni = len(giorni_lavoro) if len(giorni_lavoro) > 0 else 1
+        
         for g in giorni_lavoro:
             g_date = g.date()
             if start_filter <= g_date <= end_filter:
                 dati_giornalieri.append({
-                    "Attività": row['Attività'], "Data": g_date, "Settimana": g.strftime('%Y-W%V'),
+                    "Attività": row['Attività'], 
+                    "Data": g_date, 
+                    "Settimana": g.strftime('%Y-W%V'),
                     "Materiali": row["Materiali [kgCO₂ eq]"]/n_giorni, "Rifiuti": row["Rifiuti [kgCO₂ eq]"]/n_giorni,
                     "Macchinari": row["Macchinari [kgCO₂ eq]"]/n_giorni, "Trasporti": row["Trasporti [kgCO₂ eq]"]/n_giorni,
                     "Energia": row["Energia [kgCO₂ eq]"]/n_giorni, "Acqua": row["Acqua [kgCO₂ eq]"]/n_giorni,
@@ -485,10 +528,14 @@ if st.session_state.risultati_progettazione:
         df_plot = df_plot[df_plot['Emissioni [kgCO₂ eq]'] > 0]
         
         valori_pie = {
-            "Materiali": df_risultati["Materiali [kgCO₂ eq]"].sum(), "Rifiuti": df_risultati["Rifiuti [kgCO₂ eq]"].sum(),
-            "Macchinari": df_risultati["Macchinari [kgCO₂ eq]"].sum(), "Trasporti": df_risultati["Trasporti [kgCO₂ eq]"].sum(),
-            "Energia": df_risultati["Energia [kgCO₂ eq]"].sum(), "Acqua": df_risultati["Acqua [kgCO₂ eq]"].sum()
+            "Materiali": df_risultati["Materiali [kgCO₂ eq]"].sum(),
+            "Rifiuti": df_risultati["Rifiuti [kgCO₂ eq]"].sum(),
+            "Macchinari": df_risultati["Macchinari [kgCO₂ eq]"].sum(),
+            "Trasporti": df_risultati["Trasporti [kgCO₂ eq]"].sum(),
+            "Energia": df_risultati["Energia [kgCO₂ eq]"].sum(),
+            "Acqua": df_risultati["Acqua [kgCO₂ eq]"].sum()
         }
+        
         if ambito_gwp == "GWP Embodied Carbon (Materiali)":
             valori_pie = {"Materiali": valori_pie["Materiali"]}
         elif ambito_gwp == "GWP Altri Processi":
@@ -504,28 +551,81 @@ if st.session_state.risultati_progettazione:
         df_totale_assoluto = df_plot.groupby(['Settimana', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
         df_week_tot = df_totale_assoluto.groupby('Settimana')['Emissioni [kgCO₂ eq]'].sum().reset_index()
         
-        fig_totale_assoluto = px.bar(df_totale_assoluto, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"], title=f"Andamento Complessivo - {ambito_gwp}", color_discrete_sequence=["#111827"])
+        fig_totale_assoluto = px.bar(
+            df_totale_assoluto, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
+            title=f"Andamento Complessivo - {ambito_gwp}", color_discrete_sequence=["#111827"]
+        )
         if mostra_media_costante and not df_week_tot.empty:
-            fig_totale_assoluto.add_hline(y=df_week_tot['Emissioni [kgCO₂ eq]'].mean(), line_dash="dash", line_color="#ef4444")
+            media_tot = df_week_tot['Emissioni [kgCO₂ eq]'].mean()
+            fig_totale_assoluto.add_hline(y=media_tot, line_dash="dash", line_color="#ef4444", annotation_text="Media Costante")
         if mostra_media_mobile and not df_week_tot.empty:
             df_week_tot['Media_Mobile'] = df_week_tot['Emissioni [kgCO₂ eq]'].rolling(window=3, min_periods=1).mean()
             fig_totale_assoluto.add_trace(go.Scatter(x=df_week_tot['Settimana'], y=df_week_tot['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
         st.plotly_chart(fig_totale_assoluto, use_container_width=True)
+
+        fig_tot = px.bar(
+            df_plot, x="Settimana", y="Emissioni [kgCO₂ eq]", color="Parametro", 
+            hover_data=["Attività"], title=f"Andamento Settimanale Cumulato ({ambito_gwp})",
+            color_discrete_map=colori_parametri, barmode='stack'
+        )
+        if mostra_media_costante and not df_week_tot.empty:
+            fig_tot.add_hline(y=media_tot, line_dash="dash", line_color="#ef4444", annotation_text="Media Costante")
+        if mostra_media_mobile and not df_week_tot.empty:
+            fig_tot.add_trace(go.Scatter(x=df_week_tot['Settimana'], y=df_week_tot['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
+        st.plotly_chart(fig_tot, use_container_width=True)
+
+        st.markdown("##### Dettaglio per Singolo Parametro")
+        col_g1, col_g2 = st.columns(2)
+        
+        if ambito_gwp == "GWP Embodied Carbon (Materiali)":
+            parametri_lista = ['Materiali']
+        elif ambito_gwp == "GWP Altri Processi":
+            parametri_lista = ['Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua']
+        else:
+            parametri_lista = ['Materiali', 'Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua']
+            
+        for i, param in enumerate(parametri_lista):
+            df_param = df_plot[df_plot['Parametro'] == param]
+            if not df_param.empty:
+                df_week_param = df_param.groupby('Settimana')['Emissioni [kgCO₂ eq]'].sum().reset_index()
+                
+                fig_p = px.bar(
+                    df_param, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
+                    title=f"Emissione: {param}", color="Parametro", color_discrete_map=colori_parametri
+                )
+                fig_p.update_layout(showlegend=False)
+                
+                if mostra_media_costante:
+                    media_p = df_week_param['Emissioni [kgCO₂ eq]'].mean()
+                    fig_p.add_hline(y=media_p, line_dash="dash", line_color="#ef4444")
+                if mostra_media_mobile:
+                    df_week_param['Media_Mobile'] = df_week_param['Emissioni [kgCO₂ eq]'].rolling(window=3, min_periods=1).mean()
+                    fig_p.add_trace(go.Scatter(x=df_week_param['Settimana'], y=df_week_param['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=2)))
+                
+                if i % 2 == 0: col_g1.plotly_chart(fig_p, use_container_width=True)
+                else: col_g2.plotly_chart(fig_p, use_container_width=True)
+    else:
+        st.warning("Non ci sono attività nel periodo selezionato dal filtro.")
+
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- SEZIONE 4: FASE DI CANTIERE (CON MATCHING TEMPORALE RIGOROSO) ---
+# --- SEZIONE 4: FASE DI CANTIERE (DATI SENSORI) ---
 if st.session_state.risultati_progettazione:
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-    st.subheader("4. Monitoraggio Fase di Cantiere (Dati Dinamici Sensori con Date)")
+    st.subheader("4. Monitoraggio Fase di Cantiere (Dati Dinamici Sensori)")
     
+    # RIQUADRO INFORMATIVO 2
     st.markdown("""
     <div style='background-color: #eef2f3; padding: 15px; border-left: 5px solid #27ae60; border-radius: 4px; margin-bottom: 20px;'>
-        <strong>Istruzioni Formattazione Sensori (con Data):</strong>
+        <strong>Istruzioni di Formattazione CSV (Dati Sensori):</strong>
         <ul style='margin-top: 5px; margin-bottom: 0px;'>
-            <li>I file CSV devono contenere le colonne identificative (<em>ID attività, Nome, Struttura</em>) e una colonna di riferimento temporale (es. <em>Data</em> o <em>Date</em>).</li>
-            <li><strong>Trasporti:</strong> Colonna <em>km percorsi</em>.</li>
-            <li><strong>Energia:</strong> Colonna <em>consumo energetico [kWh]</em>.</li>
-            <li><strong>Acqua:</strong> Colonna <em>consumo acqua [l]</em> o <em>[litri]</em>.</li>
+            <li><strong>Intestazione:</strong> Tutte le tabelle devono riportare le colonne <em>ID attività, Nome (o attività), Struttura, WBS Lavorazione</em> per potersi allacciare al calcolo in progetto.</li>
+            <li><strong>Dati Specifici da inserire:</strong></li>
+            <ul>
+                <li><strong>Trasporti:</strong> Inserire colonna nominata <em>km percorsi</em>.</li>
+                <li><strong>Energia:</strong> Inserire colonna nominata <em>consumo energetico [kWh]</em>.</li>
+                <li><strong>Acqua:</strong> Inserire colonna nominata <em>consumo acqua [l]</em> o <em>[litri]</em>.</li>
+            </ul>
         </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -535,127 +635,244 @@ if st.session_state.risultati_progettazione:
     file_energia = col_s2.file_uploader("Sensori Energia (CSV)", type=['csv'])
     file_acqua = col_s3.file_uploader("Sensori Acqua (CSV)", type=['csv'])
     
-    if st.button("Ricalcola Emissioni con Dati di Cantiere (Filtraggio per Data)"):
+    if st.button("Ricalcola Emissioni con Dati di Cantiere"):
         df_cantiere = df_risultati.copy()
         
-        # Funzione di supporto per pulire intestazioni e generare etichetta attività
-        def prepara_df_sensore(f_upload):
-            df_s = pd.read_csv(f_upload)
-            c_id = next((c for c in df_s.columns if 'id' in str(c).lower()), df_s.columns[1])
-            c_nome = next((c for c in df_s.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_s.columns[2] if len(df_s.columns)>2 else None)
-            c_str = next((c for c in df_s.columns if 'struttura' in str(c).lower()), None)
-            c_data = next((c for c in df_s.columns if 'data' in str(c).lower() or 'date' in str(c).lower()), None)
-            
-            etichette = df_s[c_id].astype(str) + " - " + df_s[c_nome].astype(str)
-            if c_str: etichette += " | " + df_s[c_str].astype(str)
-            df_s['Label_Attivita'] = etichette
-            if c_data:
-                df_s['Data_Sensore'] = pd.to_datetime(df_s[c_data], errors='coerce').dt.date
-            return df_s, c_data is not None
-
-        # 1. TRASPORTI CON DATA
         if file_trasporti:
-            df_t, ha_data_t = prepara_df_sensore(file_trasporti)
-            for idx, row in df_cantiere.iterrows():
-                label = row['Attività']
-                d_iniz, d_fin = row['Data Inizio'], row['Data Fine']
+            df_t = pd.read_csv(file_trasporti)
+            col_id = next((c for c in df_t.columns if 'id' in str(c).lower()), df_t.columns[1])
+            col_nome = next((c for c in df_t.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_t.columns[2] if len(df_t.columns)>2 else None)
+            col_str = next((c for c in df_t.columns if 'struttura' in str(c).lower()), None)
+            col_wbs = next((c for c in df_t.columns if 'wbs lav' in str(c).lower()), None)
+            
+            etichette_t = df_t[col_id].astype(str) + " - " + df_t[col_nome].astype(str)
+            if col_str: etichette_t += " | " + df_t[col_str].astype(str)
+            if col_wbs: etichette_t += " (" + df_t[col_wbs].astype(str) + ")"
+            
+            df_t['Label_Attivita'] = etichette_t
+            
+            for label in df_t['Label_Attivita'].unique():
                 if label in st.session_state.configurazioni_salvate:
                     conf = st.session_state.configurazioni_salvate[label]
+                    km_totali = df_t[df_t['Label_Attivita'] == label]['km percorsi'].sum()
                     if conf['Carburante'] is not None:
-                        if ha_data_t and 'Data_Sensore' in df_t.columns:
-                            mask = (df_t['Label_Attivita'] == label) & (df_t['Data_Sensore'] >= d_iniz) & (df_t['Data_Sensore'] <= d_fin)
-                            km_tot = df_t[mask]['km percorsi'].sum()
-                        else:
-                            km_tot = df_t[df_t['Label_Attivita'] == label]['km percorsi'].sum()
-                        df_cantiere.loc[idx, 'Trasporti [kgCO₂ eq]'] = km_tot * conf['Consumo_mezzo'] * conf['FE_Trasporti']
+                        df_cantiere.loc[df_cantiere['Attività'] == label, 'Trasporti [kgCO₂ eq]'] = km_totali * conf['Consumo_mezzo'] * conf['FE_Trasporti']
         
-        # 2. ENERGIA CON DATA
         if file_energia:
-            df_e, ha_data_e = prepara_df_sensore(file_energia)
-            for idx, row in df_cantiere.iterrows():
-                label = row['Attività']
-                d_iniz, d_fin = row['Data Inizio'], row['Data Fine']
+            df_e = pd.read_csv(file_energia)
+            col_id = next((c for c in df_e.columns if 'id' in str(c).lower()), df_e.columns[1])
+            col_nome = next((c for c in df_e.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_e.columns[2] if len(df_e.columns)>2 else None)
+            col_str = next((c for c in df_e.columns if 'struttura' in str(c).lower()), None)
+            col_wbs = next((c for c in df_e.columns if 'wbs lav' in str(c).lower()), None)
+            
+            etichette_e = df_e[col_id].astype(str) + " - " + df_e[col_nome].astype(str)
+            if col_str: etichette_e += " | " + df_e[col_str].astype(str)
+            if col_wbs: etichette_e += " (" + df_e[col_wbs].astype(str) + ")"
+            
+            df_e['Label_Attivita'] = etichette_e
+            for label in df_e['Label_Attivita'].unique():
                 if label in st.session_state.configurazioni_salvate:
-                    conf = st.session_state.configurazioni_salvate[label]
-                    if ha_data_e and 'Data_Sensore' in df_e.columns:
-                        mask = (df_e['Label_Attivita'] == label) & (df_e['Data_Sensore'] >= d_iniz) & (df_e['Data_Sensore'] <= d_fin)
-                        kwh_tot = df_e[mask]['consumo energetico [kWh]'].sum()
-                    else:
-                        kwh_tot = df_e[df_e['Label_Attivita'] == label]['consumo energetico [kWh]'].sum()
-                    df_cantiere.loc[idx, 'Energia [kgCO₂ eq]'] = kwh_tot * conf['FE_Energia']
+                    kwh_totali = df_e[df_e['Label_Attivita'] == label]['consumo energetico [kWh]'].sum()
+                    df_cantiere.loc[df_cantiere['Attività'] == label, 'Energia [kgCO₂ eq]'] = kwh_totali * st.session_state.configurazioni_salvate[label]['FE_Energia']
                     
-        # 3. ACQUA CON DATA
         if file_acqua:
-            df_a, ha_data_a = prepara_df_sensore(file_acqua)
-            col_litri = next((c for c in df_a.columns if 'acqua' in str(c).lower() or 'litri' in str(c).lower()), 'consumo acqua [l]')
-            for idx, row in df_cantiere.iterrows():
-                label = row['Attività']
-                d_iniz, d_fin = row['Data Inizio'], row['Data Fine']
+            df_a = pd.read_csv(file_acqua)
+            col_id = next((c for c in df_a.columns if 'id' in str(c).lower()), df_a.columns[1])
+            col_nome = next((c for c in df_a.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_a.columns[2] if len(df_a.columns)>2 else None)
+            col_str = next((c for c in df_a.columns if 'struttura' in str(c).lower()), None)
+            col_wbs = next((c for c in df_a.columns if 'wbs lav' in str(c).lower()), None)
+            
+            etichette_a = df_a[col_id].astype(str) + " - " + df_a[col_nome].astype(str)
+            if col_str: etichette_a += " | " + df_a[col_str].astype(str)
+            if col_wbs: etichette_a += " (" + df_a[col_wbs].astype(str) + ")"
+            
+            df_a['Label_Attivita'] = etichette_a
+            for label in df_a['Label_Attivita'].unique():
                 if label in st.session_state.configurazioni_salvate:
-                    conf = st.session_state.configurazioni_salvate[label]
-                    if ha_data_a and 'Data_Sensore' in df_a.columns:
-                        mask = (df_a['Label_Attivita'] == label) & (df_a['Data_Sensore'] >= d_iniz) & (df_a['Data_Sensore'] <= d_fin)
-                        l_tot = df_a[mask][col_litri].sum()
-                    else:
-                        l_tot = df_a[df_a['Label_Attivita'] == label][col_litri].sum()
-                    df_cantiere.loc[idx, 'Acqua [kgCO₂ eq]'] = l_tot * conf['FE_Acqua']
+                    l_totali = df_a[df_a['Label_Attivita'] == label]['consumo acqua [l]'].sum()
+                    df_cantiere.loc[df_cantiere['Attività'] == label, 'Acqua [kgCO₂ eq]'] = l_totali * st.session_state.configurazioni_salvate[label]['FE_Acqua']
         
         df_cantiere['Totale [kgCO₂ eq]'] = df_cantiere[['Materiali [kgCO₂ eq]', 'Rifiuti [kgCO₂ eq]', 'Macchinari [kgCO₂ eq]', 'Trasporti [kgCO₂ eq]', 'Energia [kgCO₂ eq]', 'Acqua [kgCO₂ eq]']].sum(axis=1)
+        
         st.dataframe(df_cantiere, use_container_width=True)
         
+        # SPLIT TOTALI CANTIERE
         gwp_cant_tot = df_cantiere['Totale [kgCO₂ eq]'].sum()
         gwp_cant_embodied = df_cantiere['Materiali [kgCO₂ eq]'].sum()
         gwp_cant_altre = gwp_cant_tot - gwp_cant_embodied
         
         st.markdown(f"""
         <div style='padding:15px; background-color:#e8f8e8; border-left: 5px solid #27ae60; border-radius:4px;'>
-            <h4>Risultati GWP (Dati Reali di Cantiere filtrati per Data)</h4>
+            <h4>Risultati GWP (Dati Reali di Cantiere)</h4>
             <ul style='font-size: 16px;'>
                 <li><strong>GWP Embodied carbon (Materiali):</strong> {gwp_cant_embodied:,.2f} kg CO₂ eq</li>
-                <li><strong>GWP Altri Processi:</strong> {gwp_cant_altre:,.2f} kg CO₂ eq</li>
+                <li><strong>GWP Altri Processi (Rifiuti, Trasporti, Macchinari, Energia, Acqua):</strong> {gwp_cant_altre:,.2f} kg CO₂ eq</li>
                 <li><strong style='font-size: 18px;'>GWP Totale Cantiere:</strong> <span style='font-size: 18px;'>{gwp_cant_tot:,.2f} kg CO₂ eq</span></li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
         
-        # --- SEZIONE UNICA DI CONFRONTO ---
+        # -------- INIZIO NUOVI GRAFICI CANTIERE CON FILTRI ----------
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown("#### Filtro Temporale e Opzioni Grafici (Dati Sensori Cantiere)")
+        col_cfil1, col_cfil2, col_cfil3 = st.columns([1, 1, 1])
+        
+        min_date_c = df_cantiere['Data Inizio'].min()
+        max_date_c = df_cantiere['Data Fine'].max()
+        
+        with col_cfil1:
+            date_range_c = st.date_input(
+                "Seleziona l'intervallo temporale (Cantiere):", 
+                value=(min_date_c, max_date_c), min_value=min_date_c, max_value=max_date_c, key="date_cantiere"
+            )
+        with col_cfil2:
+            opzione_linee_c = st.selectbox("Linee di Tendenza (Cantiere):", ["Nessuna", "Media Costante", "Andamento Medio (Media Mobile)", "Entrambe"], key="linee_cantiere")
+        with col_cfil3:
+            ambito_gwp_c = st.selectbox("Ambito GWP Grafici (Cantiere):", ["GWP Totale", "GWP Embodied Carbon (Materiali)", "GWP Altri Processi"], key="ambito_cantiere")
+        
+        mostra_media_costante_c = opzione_linee_c in ["Media Costante", "Entrambe"]
+        mostra_media_mobile_c = opzione_linee_c in ["Andamento Medio (Media Mobile)", "Entrambe"]
+        
+        if isinstance(date_range_c, tuple) and len(date_range_c) == 2:
+            start_filter_c, end_filter_c = date_range_c
+        else:
+            start_filter_c, end_filter_c = min_date_c, max_date_c
+
+        dati_giornalieri_c = []
+        for _, row in df_cantiere.iterrows():
+            giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
+            n_giorni = len(giorni_lavoro) if len(giorni_lavoro) > 0 else 1
+            
+            for g in giorni_lavoro:
+                g_date = g.date()
+                if start_filter_c <= g_date <= end_filter_c:
+                    dati_giornalieri_c.append({
+                        "Attività": row['Attività'], 
+                        "Data": g_date, 
+                        "Settimana": g.strftime('%Y-W%V'),
+                        "Materiali": row["Materiali [kgCO₂ eq]"]/n_giorni, "Rifiuti": row["Rifiuti [kgCO₂ eq]"]/n_giorni,
+                        "Macchinari": row["Macchinari [kgCO₂ eq]"]/n_giorni, "Trasporti": row["Trasporti [kgCO₂ eq]"]/n_giorni,
+                        "Energia": row["Energia [kgCO₂ eq]"]/n_giorni, "Acqua": row["Acqua [kgCO₂ eq]"]/n_giorni,
+                        "Totale": row["Totale [kgCO₂ eq]"]/n_giorni
+                    })
+        
+        if dati_giornalieri_c:
+            df_giornaliero_c = pd.DataFrame(dati_giornalieri_c)
+            df_melted_c = df_giornaliero_c.melt(
+                id_vars=['Settimana', 'Attività'], 
+                value_vars=['Materiali', 'Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua'], 
+                var_name='Parametro', value_name='Emissioni [kgCO₂ eq]'
+            )
+            
+            if ambito_gwp_c == "GWP Embodied Carbon (Materiali)":
+                df_melted_c = df_melted_c[df_melted_c['Parametro'] == 'Materiali']
+            elif ambito_gwp_c == "GWP Altri Processi":
+                df_melted_c = df_melted_c[df_melted_c['Parametro'] != 'Materiali']
+                
+            df_plot_c = df_melted_c.groupby(['Settimana', 'Parametro', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
+            df_plot_c = df_plot_c[df_plot_c['Emissioni [kgCO₂ eq]'] > 0]
+            
+            valori_pie_c = {
+                "Materiali": df_cantiere["Materiali [kgCO₂ eq]"].sum(),
+                "Rifiuti": df_cantiere["Rifiuti [kgCO₂ eq]"].sum(),
+                "Macchinari": df_cantiere["Macchinari [kgCO₂ eq]"].sum(),
+                "Trasporti": df_cantiere["Trasporti [kgCO₂ eq]"].sum(),
+                "Energia": df_cantiere["Energia [kgCO₂ eq]"].sum(),
+                "Acqua": df_cantiere["Acqua [kgCO₂ eq]"].sum()
+            }
+            
+            if ambito_gwp_c == "GWP Embodied Carbon (Materiali)":
+                valori_pie_c = {"Materiali": valori_pie_c["Materiali"]}
+            elif ambito_gwp_c == "GWP Altri Processi":
+                valori_pie_c.pop("Materiali", None)
+                
+            df_pie_c = pd.DataFrame({"Parametro": list(valori_pie_c.keys()), "Valore": list(valori_pie_c.values())})
+            fig_pie_c = px.pie(df_pie_c, names="Parametro", values="Valore", title=f"Incidenza Percentuale Cantiere - {ambito_gwp_c}", color="Parametro", color_discrete_map=colori_parametri, hole=0.4)
+            st.plotly_chart(fig_pie_c, use_container_width=True)
+
+            st.markdown(f"#### Grafici Settimanali Dettagliati Cantiere ({ambito_gwp_c})")
+
+            df_totale_assoluto_c = df_plot_c.groupby(['Settimana', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
+            df_week_tot_c = df_totale_assoluto_c.groupby('Settimana')['Emissioni [kgCO₂ eq]'].sum().reset_index()
+            
+            fig_totale_assoluto_c = px.bar(
+                df_totale_assoluto_c, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
+                title=f"Andamento Complessivo Cantiere - {ambito_gwp_c}", color_discrete_sequence=["#111827"]
+            )
+            if mostra_media_costante_c and not df_week_tot_c.empty:
+                media_tot_c = df_week_tot_c['Emissioni [kgCO₂ eq]'].mean()
+                fig_totale_assoluto_c.add_hline(y=media_tot_c, line_dash="dash", line_color="#ef4444", annotation_text="Media Costante")
+            if mostra_media_mobile_c and not df_week_tot_c.empty:
+                df_week_tot_c['Media_Mobile'] = df_week_tot_c['Emissioni [kgCO₂ eq]'].rolling(window=3, min_periods=1).mean()
+                fig_totale_assoluto_c.add_trace(go.Scatter(x=df_week_tot_c['Settimana'], y=df_week_tot_c['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
+            st.plotly_chart(fig_totale_assoluto_c, use_container_width=True)
+
+            fig_tot_c = px.bar(
+                df_plot_c, x="Settimana", y="Emissioni [kgCO₂ eq]", color="Parametro", 
+                hover_data=["Attività"], title=f"Andamento Settimanale Cumulato Cantiere ({ambito_gwp_c})",
+                color_discrete_map=colori_parametri, barmode='stack'
+            )
+            if mostra_media_costante_c and not df_week_tot_c.empty:
+                fig_tot_c.add_hline(y=media_tot_c, line_dash="dash", line_color="#ef4444", annotation_text="Media Costante")
+            if mostra_media_mobile_c and not df_week_tot_c.empty:
+                fig_tot_c.add_trace(go.Scatter(x=df_week_tot_c['Settimana'], y=df_week_tot_c['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
+            st.plotly_chart(fig_tot_c, use_container_width=True)
+
+            st.markdown("##### Dettaglio per Singolo Parametro (Cantiere)")
+            col_cg1, col_cg2 = st.columns(2)
+            
+            if ambito_gwp_c == "GWP Embodied Carbon (Materiali)":
+                parametri_lista_c = ['Materiali']
+            elif ambito_gwp_c == "GWP Altri Processi":
+                parametri_lista_c = ['Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua']
+            else:
+                parametri_lista_c = ['Materiali', 'Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua']
+                
+            for i, param in enumerate(parametri_lista_c):
+                df_param_c = df_plot_c[df_plot_c['Parametro'] == param]
+                if not df_param_c.empty:
+                    df_week_param_c = df_param_c.groupby('Settimana')['Emissioni [kgCO₂ eq]'].sum().reset_index()
+                    
+                    fig_p_c = px.bar(
+                        df_param_c, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
+                        title=f"Emissione (Dati Reali): {param}", color="Parametro", color_discrete_map=colori_parametri
+                    )
+                    fig_p_c.update_layout(showlegend=False)
+                    
+                    if mostra_media_costante_c:
+                        media_p_c = df_week_param_c['Emissioni [kgCO₂ eq]'].mean()
+                        fig_p_c.add_hline(y=media_p_c, line_dash="dash", line_color="#ef4444")
+                    if mostra_media_mobile_c:
+                        df_week_param_c['Media_Mobile'] = df_week_param_c['Emissioni [kgCO₂ eq]'].rolling(window=3, min_periods=1).mean()
+                        fig_p_c.add_trace(go.Scatter(x=df_week_param_c['Settimana'], y=df_week_param_c['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=2)))
+                    
+                    if i % 2 == 0: col_cg1.plotly_chart(fig_p_c, use_container_width=True)
+                    else: col_cg2.plotly_chart(fig_p_c, use_container_width=True)
+        else:
+            st.warning("Non ci sono attività nel periodo selezionato dal filtro Cantiere.")
+            
+        # -------- FINE NUOVI GRAFICI CANTIERE CON FILTRI ----------
+        
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("Confronto Finale: Progettazione vs Cantiere Reale")
         
-        col_comp1, col_comp2, col_comp3 = st.columns([1, 1, 1])
-        min_date_c = min(df_risultati['Data Inizio'].min(), df_cantiere['Data Inizio'].min())
-        max_date_c = max(df_risultati['Data Fine'].max(), df_cantiere['Data Fine'].max())
+        ambito_comp = st.selectbox("Ambito GWP per il Grafico di Confronto:", ["GWP Totale", "GWP Embodied Carbon (Materiali)", "GWP Altri Processi"], key="comp_scope")
         
-        with col_comp1:
-            date_range_c = st.date_input("Filtro Temporale (Confronto):", value=(min_date_c, max_date_c), min_value=min_date_c, max_value=max_date_c, key="date_comp")
-        with col_comp2:
-            opzione_linee_c = st.selectbox("Linee di Tendenza:", ["Nessuna", "Media Costante", "Andamento Medio (Media Mobile)", "Entrambe"], key="linee_comp")
-        with col_comp3:
-            ambito_comp = st.selectbox("Ambito GWP Grafici:", ["GWP Totale", "GWP Embodied Carbon (Materiali)", "GWP Altri Processi"], key="ambito_comp")
-            
-        mostra_media_costante_c = opzione_linee_c in ["Media Costante", "Entrambe"]
-        mostra_media_mobile_c = opzione_linee_c in ["Andamento Medio (Media Mobile)", "Entrambe"]
-        start_filter_c, end_filter_c = date_range_c if isinstance(date_range_c, tuple) and len(date_range_c) == 2 else (min_date_c, max_date_c)
-
         if ambito_comp == "GWP Embodied Carbon (Materiali)":
-            col_to_sum = ['Materiali [kgCO₂ eq]']
+            col_comp = 'Materiali [kgCO₂ eq]'
         elif ambito_comp == "GWP Altri Processi":
-            col_to_sum = ['Rifiuti [kgCO₂ eq]', 'Macchinari [kgCO₂ eq]', 'Trasporti [kgCO₂ eq]', 'Energia [kgCO₂ eq]', 'Acqua [kgCO₂ eq]']
+            df_risultati['_Altri'] = df_risultati["Totale [kgCO₂ eq]"] - df_risultati["Materiali [kgCO₂ eq]"]
+            df_cantiere['_Altri'] = df_cantiere["Totale [kgCO₂ eq]"] - df_cantiere["Materiali [kgCO₂ eq]"]
+            col_comp = '_Altri'
         else:
-            col_to_sum = ['Materiali [kgCO₂ eq]', 'Rifiuti [kgCO₂ eq]', 'Macchinari [kgCO₂ eq]', 'Trasporti [kgCO₂ eq]', 'Energia [kgCO₂ eq]', 'Acqua [kgCO₂ eq]']
+            col_comp = 'Totale [kgCO₂ eq]'
 
-        df_ris_att = df_risultati.copy()
-        df_ris_att['Valore'] = df_ris_att[col_to_sum].sum(axis=1)
-        df_cant_att = df_cantiere.copy()
-        df_cant_att['Valore'] = df_cant_att[col_to_sum].sum(axis=1)
-        
-        df_comp_att = pd.DataFrame({
-            "Fase": ["Progettazione"]*len(df_ris_att) + ["Cantiere"]*len(df_cant_att),
-            "Attività": pd.concat([df_ris_att['Attività'], df_cant_att['Attività']]),
-            "Emissioni [kgCO₂ eq]": pd.concat([df_ris_att['Valore'], df_cant_att['Valore']])
+        df_comp = pd.DataFrame({
+            "Fase": ["Progettazione"]*len(df_risultati) + ["Cantiere"]*len(df_cantiere),
+            "Attività": pd.concat([df_risultati['Attività'], df_cantiere['Attività']]),
+            "Totale Emissioni": pd.concat([df_risultati[col_comp], df_cantiere[col_comp]])
         })
-        
-        fig_comp_att = px.bar(df_comp_att, x="Attività", y="Emissioni [kgCO₂ eq]", color="Fase", barmode="group", title=f"Confronto Totale per Singola Attività ({ambito_comp})", color_discrete_map={"Progettazione": "#3498db", "Cantiere": "#2ecc71"})
-        st.plotly_chart(fig_comp_att, use_container_width=True)
+        fig_comp = px.bar(df_comp, x="Attività", y="Totale Emissioni", color="Fase", barmode="group", title=f"Confronto Emissioni per Singola Attività ({ambito_comp})")
+        st.plotly_chart(fig_comp, use_container_width=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
