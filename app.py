@@ -339,6 +339,14 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
         
         if col_mac_fe:
+            # TABELLA SCHEDE TECNICHE RIPRISTINATA (come richiesto)
+            col_macc_link = next((c for c in df_macc_filt.columns if 'link' in str(c).lower()), df_macc_filt.columns[-1])
+            st.dataframe(
+                df_macc_filt[['Macchinario', 'Produttore', col_mac_fe, col_macc_link]],
+                column_config={col_macc_link: st.column_config.LinkColumn("Link Schede Tecniche")},
+                hide_index=True
+            )
+            
             macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}")
             fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore][col_mac_fe].values[0]).replace(',', '.'))
         else:
@@ -355,12 +363,13 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         em_macc_i = fe_macc_8h * num_macc * giorni_macc
         em_macchinari += em_macc_i
         
+        # Tabella riassuntiva Macchinari - TITOLI ORIGINALI RIPRISTINATI
         dati_macchinari_tabella.append({
-            "Macchinario": f"{macchinario} ({macc_produttore})",
+            "Voce": f"Macchinario {i+1}",
             "Num. Macchine": num_macc,
             "Giorni": giorni_macc,
-            "Fattore Emissivo": round(fe_macc_8h, 2),
-            "Emissioni [kgCO₂ eq]": round(em_macc_i, 2)
+            "Fattore Emissivo [kgCO₂ eq/giorno]": f"{fe_macc_8h:,.2f}",
+            "Emissioni [kgCO₂ eq]": f"{em_macc_i:,.2f}"
         })
         
     st.markdown("**Riepilogo Macchinari:**")
