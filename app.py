@@ -609,23 +609,19 @@ if st.session_state.risultati_progettazione:
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- SEZIONE 4: FASE DI CANTIERE (DATI SENSORI) ---
+# --- SEZIONE 4: FASE DI CANTIERE (CON MATCHING TEMPORALE RIGOROSO) ---
 if st.session_state.risultati_progettazione:
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-    st.subheader("4. Monitoraggio Fase di Cantiere (Dati Dinamici Sensori)")
+    st.subheader("4. Monitoraggio Fase di Cantiere (Dati Dinamici Sensori con Date)")
     
-    # RIQUADRO INFORMATIVO 2
     st.markdown("""
     <div style='background-color: #eef2f3; padding: 15px; border-left: 5px solid #27ae60; border-radius: 4px; margin-bottom: 20px;'>
-        <strong>Istruzioni di Formattazione CSV (Dati Sensori):</strong>
+        <strong>Istruzioni Formattazione Sensori (con Data):</strong>
         <ul style='margin-top: 5px; margin-bottom: 0px;'>
-            <li><strong>Intestazione:</strong> Tutte le tabelle devono riportare le colonne <em>ID attività, Nome (o attività), Struttura, WBS Lavorazione</em> per potersi allacciare al calcolo in progetto.</li>
-            <li><strong>Dati Specifici da inserire:</strong></li>
-            <ul>
-                <li><strong>Trasporti:</strong> Inserire colonna nominata <em>km percorsi</em>.</li>
-                <li><strong>Energia:</strong> Inserire colonna nominata <em>consumo energetico [kWh]</em>.</li>
-                <li><strong>Acqua:</strong> Inserire colonna nominata <em>consumo acqua [l]</em> o <em>[litri]</em>.</li>
-            </ul>
+            <li>I file CSV devono contenere le colonne identificative (<em>ID attività, Nome, Struttura</em>) e una colonna di riferimento temporale (es. <em>Data</em> o <em>Date</em>).</li>
+            <li><strong>Trasporti:</strong> Colonna <em>km percorsi</em>.</li>
+            <li><strong>Energia:</strong> Colonna <em>consumo energetico [kWh]</em>.</li>
+            <li><strong>Acqua:</strong> Colonna <em>consumo acqua [l]</em> o <em>[litri]</em>.</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
@@ -635,78 +631,84 @@ if st.session_state.risultati_progettazione:
     file_energia = col_s2.file_uploader("Sensori Energia (CSV)", type=['csv'])
     file_acqua = col_s3.file_uploader("Sensori Acqua (CSV)", type=['csv'])
     
-    if st.button("Ricalcola Emissioni con Dati di Cantiere"):
+    if st.button("Ricalcola Emissioni con Dati di Cantiere (Filtraggio per Data)"):
         df_cantiere = df_risultati.copy()
         
+        # Funzione di supporto per pulire intestazioni e generare etichetta attività
+        def prepara_df_sensore(f_upload):
+            df_s = pd.read_csv(f_upload)
+            c_id = next((c for c in df_s.columns if 'id' in str(c).lower()), df_s.columns[1])
+            c_nome = next((c for c in df_s.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_s.columns[2] if len(df_s.columns)>2 else None)
+            c_str = next((c for c in df_s.columns if 'struttura' in str(c).lower()), None)
+            c_data = next((c for c in df_s.columns if 'data' in str(c).lower() or 'date' in str(c).lower()), None)
+            
+            etichette = df_s[c_id].astype(str) + " - " + df_s[c_nome].astype(str)
+            if c_str: etichette += " | " + df_s[c_str].astype(str)
+            df_s['Label_Attivita'] = etichette
+            if c_data:
+                df_s['Data_Sensore'] = pd.to_datetime(df_s[c_data], errors='coerce').dt.date
+            return df_s, c_data is not None
+
+        # 1. TRASPORTI CON DATA
         if file_trasporti:
-            df_t = pd.read_csv(file_trasporti)
-            col_id = next((c for c in df_t.columns if 'id' in str(c).lower()), df_t.columns[1])
-            col_nome = next((c for c in df_t.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_t.columns[2] if len(df_t.columns)>2 else None)
-            col_str = next((c for c in df_t.columns if 'struttura' in str(c).lower()), None)
-            col_wbs = next((c for c in df_t.columns if 'wbs lav' in str(c).lower()), None)
-            
-            etichette_t = df_t[col_id].astype(str) + " - " + df_t[col_nome].astype(str)
-            if col_str: etichette_t += " | " + df_t[col_str].astype(str)
-            if col_wbs: etichette_t += " (" + df_t[col_wbs].astype(str) + ")"
-            
-            df_t['Label_Attivita'] = etichette_t
-            
-            for label in df_t['Label_Attivita'].unique():
+            df_t, ha_data_t = prepara_df_sensore(file_trasporti)
+            for idx, row in df_cantiere.iterrows():
+                label = row['Attività']
+                d_iniz, d_fin = row['Data Inizio'], row['Data Fine']
                 if label in st.session_state.configurazioni_salvate:
                     conf = st.session_state.configurazioni_salvate[label]
-                    km_totali = df_t[df_t['Label_Attivita'] == label]['km percorsi'].sum()
                     if conf['Carburante'] is not None:
-                        df_cantiere.loc[df_cantiere['Attività'] == label, 'Trasporti [kgCO₂ eq]'] = km_totali * conf['Consumo_mezzo'] * conf['FE_Trasporti']
+                        if ha_data_t and 'Data_Sensore' in df_t.columns:
+                            mask = (df_t['Label_Attivita'] == label) & (df_t['Data_Sensore'] >= d_iniz) & (df_t['Data_Sensore'] <= d_fin)
+                            km_tot = df_t[mask]['km percorsi'].sum()
+                        else:
+                            km_tot = df_t[df_t['Label_Attivita'] == label]['km percorsi'].sum()
+                        df_cantiere.loc[idx, 'Trasporti [kgCO₂ eq]'] = km_tot * conf['Consumo_mezzo'] * conf['FE_Trasporti']
         
+        # 2. ENERGIA CON DATA
         if file_energia:
-            df_e = pd.read_csv(file_energia)
-            col_id = next((c for c in df_e.columns if 'id' in str(c).lower()), df_e.columns[1])
-            col_nome = next((c for c in df_e.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_e.columns[2] if len(df_e.columns)>2 else None)
-            col_str = next((c for c in df_e.columns if 'struttura' in str(c).lower()), None)
-            col_wbs = next((c for c in df_e.columns if 'wbs lav' in str(c).lower()), None)
-            
-            etichette_e = df_e[col_id].astype(str) + " - " + df_e[col_nome].astype(str)
-            if col_str: etichette_e += " | " + df_e[col_str].astype(str)
-            if col_wbs: etichette_e += " (" + df_e[col_wbs].astype(str) + ")"
-            
-            df_e['Label_Attivita'] = etichette_e
-            for label in df_e['Label_Attivita'].unique():
+            df_e, ha_data_e = prepara_df_sensore(file_energia)
+            for idx, row in df_cantiere.iterrows():
+                label = row['Attività']
+                d_iniz, d_fin = row['Data Inizio'], row['Data Fine']
                 if label in st.session_state.configurazioni_salvate:
-                    kwh_totali = df_e[df_e['Label_Attivita'] == label]['consumo energetico [kWh]'].sum()
-                    df_cantiere.loc[df_cantiere['Attività'] == label, 'Energia [kgCO₂ eq]'] = kwh_totali * st.session_state.configurazioni_salvate[label]['FE_Energia']
+                    conf = st.session_state.configurazioni_salvate[label]
+                    if ha_data_e and 'Data_Sensore' in df_e.columns:
+                        mask = (df_e['Label_Attivita'] == label) & (df_e['Data_Sensore'] >= d_iniz) & (df_e['Data_Sensore'] <= d_fin)
+                        kwh_tot = df_e[mask]['consumo energetico [kWh]'].sum()
+                    else:
+                        kwh_tot = df_e[df_e['Label_Attivita'] == label]['consumo energetico [kWh]'].sum()
+                    df_cantiere.loc[idx, 'Energia [kgCO₂ eq]'] = kwh_tot * conf['FE_Energia']
                     
+        # 3. ACQUA CON DATA
         if file_acqua:
-            df_a = pd.read_csv(file_acqua)
-            col_id = next((c for c in df_a.columns if 'id' in str(c).lower()), df_a.columns[1])
-            col_nome = next((c for c in df_a.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_a.columns[2] if len(df_a.columns)>2 else None)
-            col_str = next((c for c in df_a.columns if 'struttura' in str(c).lower()), None)
-            col_wbs = next((c for c in df_a.columns if 'wbs lav' in str(c).lower()), None)
-            
-            etichette_a = df_a[col_id].astype(str) + " - " + df_a[col_nome].astype(str)
-            if col_str: etichette_a += " | " + df_a[col_str].astype(str)
-            if col_wbs: etichette_a += " (" + df_a[col_wbs].astype(str) + ")"
-            
-            df_a['Label_Attivita'] = etichette_a
-            for label in df_a['Label_Attivita'].unique():
+            df_a, ha_data_a = prepara_df_sensore(file_acqua)
+            col_litri = next((c for c in df_a.columns if 'acqua' in str(c).lower() or 'litri' in str(c).lower()), 'consumo acqua [l]')
+            for idx, row in df_cantiere.iterrows():
+                label = row['Attività']
+                d_iniz, d_fin = row['Data Inizio'], row['Data Fine']
                 if label in st.session_state.configurazioni_salvate:
-                    l_totali = df_a[df_a['Label_Attivita'] == label]['consumo acqua [l]'].sum()
-                    df_cantiere.loc[df_cantiere['Attività'] == label, 'Acqua [kgCO₂ eq]'] = l_totali * st.session_state.configurazioni_salvate[label]['FE_Acqua']
+                    conf = st.session_state.configurazioni_salvate[label]
+                    if ha_data_a and 'Data_Sensore' in df_a.columns:
+                        mask = (df_a['Label_Attivita'] == label) & (df_a['Data_Sensore'] >= d_iniz) & (df_a['Data_Sensore'] <= d_fin)
+                        l_tot = df_a[mask][col_litri].sum()
+                    else:
+                        l_tot = df_a[df_a['Label_Attivita'] == label][col_litri].sum()
+                    df_cantiere.loc[idx, 'Acqua [kgCO₂ eq]'] = l_tot * conf['FE_Acqua']
         
         df_cantiere['Totale [kgCO₂ eq]'] = df_cantiere[['Materiali [kgCO₂ eq]', 'Rifiuti [kgCO₂ eq]', 'Macchinari [kgCO₂ eq]', 'Trasporti [kgCO₂ eq]', 'Energia [kgCO₂ eq]', 'Acqua [kgCO₂ eq]']].sum(axis=1)
-        
         st.dataframe(df_cantiere, use_container_width=True)
         
-        # SPLIT TOTALI CANTIERE
         gwp_cant_tot = df_cantiere['Totale [kgCO₂ eq]'].sum()
         gwp_cant_embodied = df_cantiere['Materiali [kgCO₂ eq]'].sum()
         gwp_cant_altre = gwp_cant_tot - gwp_cant_embodied
         
         st.markdown(f"""
         <div style='padding:15px; background-color:#e8f8e8; border-left: 5px solid #27ae60; border-radius:4px;'>
-            <h4>Risultati GWP (Dati Reali di Cantiere)</h4>
+            <h4>Risultati GWP (Dati Reali di Cantiere filtrati per Data)</h4>
             <ul style='font-size: 16px;'>
                 <li><strong>GWP Embodied carbon (Materiali):</strong> {gwp_cant_embodied:,.2f} kg CO₂ eq</li>
-                <li><strong>GWP Altri Processi (Rifiuti, Trasporti, Macchinari, Energia, Acqua):</strong> {gwp_cant_altre:,.2f} kg CO₂ eq</li>
+                <li><strong>GWP Altri Processi:</strong> {gwp_cant_altre:,.2f} kg CO₂ eq</li>
                 <li><strong style='font-size: 18px;'>GWP Totale Cantiere:</strong> <span style='font-size: 18px;'>{gwp_cant_tot:,.2f} kg CO₂ eq</span></li>
             </ul>
         </div>
