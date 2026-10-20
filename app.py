@@ -602,9 +602,9 @@ if st.session_state.risultati_progettazione:
             <li><strong>Intestazione:</strong> Tutte le tabelle devono riportare le colonne <em>ID attività, Nome (o attività), Struttura, WBS Lavorazione</em> per potersi allacciare al calcolo in progetto.</li>
             <li><strong>Dati Specifici da inserire:</strong></li>
             <ul>
-                <li>    <strong>Trasporti:</strong> Inserire colonna nominata <em>km percorsi</em>.</li>
-                <li>    <strong>Energia:</strong> Inserire colonna nominata <em>consumo energetico [kWh]</em>.</li>
-                <li>    <strong>Acqua:</strong> Inserire colonna nominata <em>consumo acqua [l]</em> o <em>[litri]</em>.</li>
+                <li><strong>    Trasporti:</strong> Inserire colonna nominata <em>km percorsi</em>.</li>
+                <li><strong>    Energia:</strong> Inserire colonna nominata <em>consumo energetico [kWh]</em>.</li>
+                <li><strong>    Acqua:</strong> Inserire colonna nominata <em>consumo acqua [l]</em> o <em>[litri]</em>.</li>
             </ul>
         </ul>
     </div>
@@ -686,8 +686,8 @@ if st.session_state.risultati_progettazione:
         <div style='padding:15px; background-color:#e8f8e8; border-left: 5px solid #27ae60; border-radius:4px;'>
             <h4>Risultati GWP (Dati Reali di Cantiere)</h4>
             <ul style='font-size: 16px;'>
-                <li><strong>GWP Embodied carbon (Solo Materiali):</strong> {gwp_cant_embodied:,.2f} kg CO₂ eq</li>
-                <li><strong>GWP Altri Processi (Trasporti, Macchinari, ecc.):</strong> {gwp_cant_altre:,.2f} kg CO₂ eq</li>
+                <li><strong>GWP Embodied carbon (Materiali):</strong> {gwp_cant_embodied:,.2f} kg CO₂ eq</li>
+                <li><strong>GWP Altri Processi (Rifiuti, Macchinari, Trasporti, Energia, Acqua):</strong> {gwp_cant_altre:,.2f} kg CO₂ eq</li>
                 <li><strong style='font-size: 18px;'>GWP Totale Cantiere:</strong> <span style='font-size: 18px;'>{gwp_cant_tot:,.2f} kg CO₂ eq</span></li>
             </ul>
         </div>
