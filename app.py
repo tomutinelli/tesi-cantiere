@@ -26,7 +26,7 @@ if 'risultati_progettazione' not in st.session_state:
 if 'configurazioni_salvate' not in st.session_state:
     st.session_state.configurazioni_salvate = {}
 
-# COLORI GRAFICI
+# COLORI GRAFICI (Allineati alla foto fornita)
 colori_parametri = {
     'Materiali': "#991b1b", 
     'Rifiuti': "#166534", 
@@ -139,6 +139,7 @@ if df_crono is not None:
             etichette = df_crono[col_id].astype(str) + " - " + df_crono[col_nome].astype(str)
             if col_struttura: etichette += " | " + df_crono[col_struttura].astype(str)
             
+                
             df_crono['Label_Attivita'] = etichette
             
             if df_quantita is not None:
@@ -212,6 +213,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 massa_str = match_q[q_col_massa].astype(str).str.replace(r'[^\d,\.-]', '', regex=True)
                 massa_pulita = pd.to_numeric(massa_str.replace({',': '.'}, regex=True), errors='coerce').fillna(0)
                 quantita_mat = massa_pulita.sum()
+
     
     st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}** kg")
     
@@ -430,7 +432,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         
         st.session_state.configurazioni_salvate[row_att['Label_Attivita']] = {
             "Carburante": "Mix" if 'Trasporti' in df_lci else None,
-            "Consumo_mezzo": 1.0 if 'Trasporti' in df_lci else 0,
+            "Consumo_mezzo": 1.0 if 'Trasporti' in df_lci else 0, # Impostato a 1, assorbe il fattore effettivo calcolato giù
             "FE_Trasporti": fe_trasporti_medio if 'Trasporti' in df_lci else 0,
             "Energia": tech_energia, "FE_Energia": fe_energia,
             "Acqua": tech_acqua, "FE_Acqua": fe_acqua
@@ -517,7 +519,6 @@ if st.session_state.risultati_progettazione:
             var_name='Parametro', value_name='Emissioni [kgCO₂ eq]'
         )
         
-        # FILTRAGGIO IN BASE ALL'AMBITO GWP SELEZIONATO
         if ambito_gwp == "GWP Embodied Carbon (Materiali)":
             df_melted = df_melted[df_melted['Parametro'] == 'Materiali']
         elif ambito_gwp == "GWP Altri Processi":
@@ -526,7 +527,6 @@ if st.session_state.risultati_progettazione:
         df_plot = df_melted.groupby(['Settimana', 'Parametro', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
         df_plot = df_plot[df_plot['Emissioni [kgCO₂ eq]'] > 0]
         
-        # GRAFICO A TORTA IN BASE ALL'AMBITO
         valori_pie = {
             "Materiali": df_risultati["Materiali [kgCO₂ eq]"].sum(),
             "Rifiuti": df_risultati["Rifiuti [kgCO₂ eq]"].sum(),
@@ -551,7 +551,6 @@ if st.session_state.risultati_progettazione:
         df_totale_assoluto = df_plot.groupby(['Settimana', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
         df_week_tot = df_totale_assoluto.groupby('Settimana')['Emissioni [kgCO₂ eq]'].sum().reset_index()
         
-        # ANDAMENTO COMPLESSIVO PER L'AMBITO SELEZIONATO
         fig_totale_assoluto = px.bar(
             df_totale_assoluto, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
             title=f"Andamento Complessivo - {ambito_gwp}", color_discrete_sequence=["#111827"]
@@ -564,7 +563,6 @@ if st.session_state.risultati_progettazione:
             fig_totale_assoluto.add_trace(go.Scatter(x=df_week_tot['Settimana'], y=df_week_tot['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
         st.plotly_chart(fig_totale_assoluto, use_container_width=True)
 
-        # GRAFICO CUMULATO PER PARAMETRI DELL'AMBITO
         fig_tot = px.bar(
             df_plot, x="Settimana", y="Emissioni [kgCO₂ eq]", color="Parametro", 
             hover_data=["Attività"], title=f"Andamento Settimanale Cumulato ({ambito_gwp})",
@@ -624,9 +622,9 @@ if st.session_state.risultati_progettazione:
             <li><strong>Intestazione:</strong> Tutte le tabelle devono riportare le colonne <em>ID attività, Nome (o attività), Struttura, WBS Lavorazione</em> per potersi allacciare al calcolo in progetto.</li>
             <li><strong>Dati Specifici da inserire:</strong></li>
             <ul>
-                <li><strong>    Trasporti:</strong> Inserire colonna nominata <em>km percorsi</em>.</li>
-                <li><strong>    Energia:</strong> Inserire colonna nominata <em>consumo energetico [kWh]</em>.</li>
-                <li><strong>    Acqua:</strong> Inserire colonna nominata <em>consumo acqua [l]</em> o <em>[litri]</em>.</li>
+                <li><strong>Trasporti:</strong> Inserire colonna nominata <em>km percorsi</em>.</li>
+                <li><strong>Energia:</strong> Inserire colonna nominata <em>consumo energetico [kWh]</em>.</li>
+                <li><strong>Acqua:</strong> Inserire colonna nominata <em>consumo acqua [l]</em> o <em>[litri]</em>.</li>
             </ul>
         </ul>
     </div>
@@ -714,9 +712,150 @@ if st.session_state.risultati_progettazione:
         </div>
         """, unsafe_allow_html=True)
         
-        st.subheader("Confronto: Progettazione vs Cantiere Reale")
+        # -------- INIZIO NUOVI GRAFICI CANTIERE CON FILTRI ----------
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown("#### Filtro Temporale e Opzioni Grafici (Dati Sensori Cantiere)")
+        col_cfil1, col_cfil2, col_cfil3 = st.columns([1, 1, 1])
         
-        # Selezione dell'ambito per il confronto
+        min_date_c = df_cantiere['Data Inizio'].min()
+        max_date_c = df_cantiere['Data Fine'].max()
+        
+        with col_cfil1:
+            date_range_c = st.date_input(
+                "Seleziona l'intervallo temporale (Cantiere):", 
+                value=(min_date_c, max_date_c), min_value=min_date_c, max_value=max_date_c, key="date_cantiere"
+            )
+        with col_cfil2:
+            opzione_linee_c = st.selectbox("Linee di Tendenza (Cantiere):", ["Nessuna", "Media Costante", "Andamento Medio (Media Mobile)", "Entrambe"], key="linee_cantiere")
+        with col_cfil3:
+            ambito_gwp_c = st.selectbox("Ambito GWP Grafici (Cantiere):", ["GWP Totale", "GWP Embodied Carbon (Materiali)", "GWP Altri Processi"], key="ambito_cantiere")
+        
+        mostra_media_costante_c = opzione_linee_c in ["Media Costante", "Entrambe"]
+        mostra_media_mobile_c = opzione_linee_c in ["Andamento Medio (Media Mobile)", "Entrambe"]
+        
+        if isinstance(date_range_c, tuple) and len(date_range_c) == 2:
+            start_filter_c, end_filter_c = date_range_c
+        else:
+            start_filter_c, end_filter_c = min_date_c, max_date_c
+
+        dati_giornalieri_c = []
+        for _, row in df_cantiere.iterrows():
+            giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
+            n_giorni = len(giorni_lavoro) if len(giorni_lavoro) > 0 else 1
+            
+            for g in giorni_lavoro:
+                g_date = g.date()
+                if start_filter_c <= g_date <= end_filter_c:
+                    dati_giornalieri_c.append({
+                        "Attività": row['Attività'], 
+                        "Data": g_date, 
+                        "Settimana": g.strftime('%Y-W%V'),
+                        "Materiali": row["Materiali [kgCO₂ eq]"]/n_giorni, "Rifiuti": row["Rifiuti [kgCO₂ eq]"]/n_giorni,
+                        "Macchinari": row["Macchinari [kgCO₂ eq]"]/n_giorni, "Trasporti": row["Trasporti [kgCO₂ eq]"]/n_giorni,
+                        "Energia": row["Energia [kgCO₂ eq]"]/n_giorni, "Acqua": row["Acqua [kgCO₂ eq]"]/n_giorni,
+                        "Totale": row["Totale [kgCO₂ eq]"]/n_giorni
+                    })
+        
+        if dati_giornalieri_c:
+            df_giornaliero_c = pd.DataFrame(dati_giornalieri_c)
+            df_melted_c = df_giornaliero_c.melt(
+                id_vars=['Settimana', 'Attività'], 
+                value_vars=['Materiali', 'Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua'], 
+                var_name='Parametro', value_name='Emissioni [kgCO₂ eq]'
+            )
+            
+            if ambito_gwp_c == "GWP Embodied Carbon (Materiali)":
+                df_melted_c = df_melted_c[df_melted_c['Parametro'] == 'Materiali']
+            elif ambito_gwp_c == "GWP Altri Processi":
+                df_melted_c = df_melted_c[df_melted_c['Parametro'] != 'Materiali']
+                
+            df_plot_c = df_melted_c.groupby(['Settimana', 'Parametro', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
+            df_plot_c = df_plot_c[df_plot_c['Emissioni [kgCO₂ eq]'] > 0]
+            
+            valori_pie_c = {
+                "Materiali": df_cantiere["Materiali [kgCO₂ eq]"].sum(),
+                "Rifiuti": df_cantiere["Rifiuti [kgCO₂ eq]"].sum(),
+                "Macchinari": df_cantiere["Macchinari [kgCO₂ eq]"].sum(),
+                "Trasporti": df_cantiere["Trasporti [kgCO₂ eq]"].sum(),
+                "Energia": df_cantiere["Energia [kgCO₂ eq]"].sum(),
+                "Acqua": df_cantiere["Acqua [kgCO₂ eq]"].sum()
+            }
+            
+            if ambito_gwp_c == "GWP Embodied Carbon (Materiali)":
+                valori_pie_c = {"Materiali": valori_pie_c["Materiali"]}
+            elif ambito_gwp_c == "GWP Altri Processi":
+                valori_pie_c.pop("Materiali", None)
+                
+            df_pie_c = pd.DataFrame({"Parametro": list(valori_pie_c.keys()), "Valore": list(valori_pie_c.values())})
+            fig_pie_c = px.pie(df_pie_c, names="Parametro", values="Valore", title=f"Incidenza Percentuale Cantiere - {ambito_gwp_c}", color="Parametro", color_discrete_map=colori_parametri, hole=0.4)
+            st.plotly_chart(fig_pie_c, use_container_width=True)
+
+            st.markdown(f"#### Grafici Settimanali Dettagliati Cantiere ({ambito_gwp_c})")
+
+            df_totale_assoluto_c = df_plot_c.groupby(['Settimana', 'Attività'])['Emissioni [kgCO₂ eq]'].sum().reset_index()
+            df_week_tot_c = df_totale_assoluto_c.groupby('Settimana')['Emissioni [kgCO₂ eq]'].sum().reset_index()
+            
+            fig_totale_assoluto_c = px.bar(
+                df_totale_assoluto_c, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
+                title=f"Andamento Complessivo Cantiere - {ambito_gwp_c}", color_discrete_sequence=["#111827"]
+            )
+            if mostra_media_costante_c and not df_week_tot_c.empty:
+                media_tot_c = df_week_tot_c['Emissioni [kgCO₂ eq]'].mean()
+                fig_totale_assoluto_c.add_hline(y=media_tot_c, line_dash="dash", line_color="#ef4444", annotation_text="Media Costante")
+            if mostra_media_mobile_c and not df_week_tot_c.empty:
+                df_week_tot_c['Media_Mobile'] = df_week_tot_c['Emissioni [kgCO₂ eq]'].rolling(window=3, min_periods=1).mean()
+                fig_totale_assoluto_c.add_trace(go.Scatter(x=df_week_tot_c['Settimana'], y=df_week_tot_c['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
+            st.plotly_chart(fig_totale_assoluto_c, use_container_width=True)
+
+            fig_tot_c = px.bar(
+                df_plot_c, x="Settimana", y="Emissioni [kgCO₂ eq]", color="Parametro", 
+                hover_data=["Attività"], title=f"Andamento Settimanale Cumulato Cantiere ({ambito_gwp_c})",
+                color_discrete_map=colori_parametri, barmode='stack'
+            )
+            if mostra_media_costante_c and not df_week_tot_c.empty:
+                fig_tot_c.add_hline(y=media_tot_c, line_dash="dash", line_color="#ef4444", annotation_text="Media Costante")
+            if mostra_media_mobile_c and not df_week_tot_c.empty:
+                fig_tot_c.add_trace(go.Scatter(x=df_week_tot_c['Settimana'], y=df_week_tot_c['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=3)))
+            st.plotly_chart(fig_tot_c, use_container_width=True)
+
+            st.markdown("##### Dettaglio per Singolo Parametro (Cantiere)")
+            col_cg1, col_cg2 = st.columns(2)
+            
+            if ambito_gwp_c == "GWP Embodied Carbon (Materiali)":
+                parametri_lista_c = ['Materiali']
+            elif ambito_gwp_c == "GWP Altri Processi":
+                parametri_lista_c = ['Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua']
+            else:
+                parametri_lista_c = ['Materiali', 'Rifiuti', 'Macchinari', 'Trasporti', 'Energia', 'Acqua']
+                
+            for i, param in enumerate(parametri_lista_c):
+                df_param_c = df_plot_c[df_plot_c['Parametro'] == param]
+                if not df_param_c.empty:
+                    df_week_param_c = df_param_c.groupby('Settimana')['Emissioni [kgCO₂ eq]'].sum().reset_index()
+                    
+                    fig_p_c = px.bar(
+                        df_param_c, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
+                        title=f"Emissione (Dati Reali): {param}", color="Parametro", color_discrete_map=colori_parametri
+                    )
+                    fig_p_c.update_layout(showlegend=False)
+                    
+                    if mostra_media_costante_c:
+                        media_p_c = df_week_param_c['Emissioni [kgCO₂ eq]'].mean()
+                        fig_p_c.add_hline(y=media_p_c, line_dash="dash", line_color="#ef4444")
+                    if mostra_media_mobile_c:
+                        df_week_param_c['Media_Mobile'] = df_week_param_c['Emissioni [kgCO₂ eq]'].rolling(window=3, min_periods=1).mean()
+                        fig_p_c.add_trace(go.Scatter(x=df_week_param_c['Settimana'], y=df_week_param_c['Media_Mobile'], mode='lines', name='Andamento Medio', line=dict(color='#f59e0b', width=2)))
+                    
+                    if i % 2 == 0: col_cg1.plotly_chart(fig_p_c, use_container_width=True)
+                    else: col_cg2.plotly_chart(fig_p_c, use_container_width=True)
+        else:
+            st.warning("Non ci sono attività nel periodo selezionato dal filtro Cantiere.")
+            
+        # -------- FINE NUOVI GRAFICI CANTIERE CON FILTRI ----------
+        
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.subheader("Confronto Finale: Progettazione vs Cantiere Reale")
+        
         ambito_comp = st.selectbox("Ambito GWP per il Grafico di Confronto:", ["GWP Totale", "GWP Embodied Carbon (Materiali)", "GWP Altri Processi"], key="comp_scope")
         
         if ambito_comp == "GWP Embodied Carbon (Materiali)":
