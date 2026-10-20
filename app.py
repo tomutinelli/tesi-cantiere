@@ -76,7 +76,7 @@ st.subheader("1. Caricamento File di Progetto")
 # RIQUADRO INFORMATIVO 1
 st.markdown("""
 <div style='background-color: #eef2f3; padding: 15px; border-left: 5px solid #2980b9; border-radius: 4px; margin-bottom: 20px;'>
-    <strong>📌 Istruzioni di Formattazione CSV (Fase di Progetto):</strong>
+    <strong>Istruzioni di Formattazione CSV (Fase di Progetto):</strong>
     <ul style='margin-top: 5px; margin-bottom: 0px;'>
         <li><strong>Formato Generale:</strong> I file devono essere <code>.csv</code> (separati da virgola <code>,</code> o punto e virgola <code>;</code>).</li>
         <li><strong>Cronoprogramma:</strong> Deve includere le colonne: <em>ID attività, Nome (o attività), Nome struttura, WBS Lavorazione, WBS Materiale, Data d'inizio, Data di fine</em>.</li>
