@@ -464,8 +464,8 @@ if st.session_state.risultati_progettazione:
     <div style='padding:15px; background-color:#e8f4f8; border-left: 5px solid #2980b9; border-radius:4px;'>
         <h4>Risultati GWP (Stima Progettuale)</h4>
         <ul style='font-size: 16px;'>
-            <li><strong>GWP Embodied carbon (Solo Materiali):</strong> {gwp_embodied:,.2f} kg CO₂ eq</li>
-            <li><strong>GWP Altri Processi (Trasporti, Macchinari, Energia, ecc.):</strong> {gwp_altre:,.2f} kg CO₂ eq</li>
+            <li><strong>GWP Embodied carbon (Materiali):</strong> {gwp_embodied:,.2f} kg CO₂ eq</li>
+            <li><strong>GWP Altri Processi (Rifiuti, Trasporti, Macchinari, Energia, Acqua):</strong> {gwp_altre:,.2f} kg CO₂ eq</li>
             <li><strong style='font-size: 18px;'>GWP Totale Cantiere:</strong> <span style='font-size: 18px;'>{gwp_totale:,.2f} kg CO₂ eq</span></li>
         </ul>
     </div>
@@ -687,7 +687,7 @@ if st.session_state.risultati_progettazione:
             <h4>Risultati GWP (Dati Reali di Cantiere)</h4>
             <ul style='font-size: 16px;'>
                 <li><strong>GWP Embodied carbon (Materiali):</strong> {gwp_cant_embodied:,.2f} kg CO₂ eq</li>
-                <li><strong>GWP Altri Processi (Rifiuti, Macchinari, Trasporti, Energia, Acqua):</strong> {gwp_cant_altre:,.2f} kg CO₂ eq</li>
+                <li><strong>GWP Altri Processi (Rifiuti, Trasporti, Macchinari, Energia, Acqua):</strong> {gwp_cant_altre:,.2f} kg CO₂ eq</li>
                 <li><strong style='font-size: 18px;'>GWP Totale Cantiere:</strong> <span style='font-size: 18px;'>{gwp_cant_tot:,.2f} kg CO₂ eq</span></li>
             </ul>
         </div>
