@@ -80,7 +80,7 @@ st.markdown("""
     <ul style='margin-top: 5px; margin-bottom: 0px;'>
         <li><strong>Formato Generale:</strong> I file devono essere <code>.csv</code> (separati da virgola <code>,</code> o punto e virgola <code>;</code>).</li>
         <li><strong>Cronoprogramma:</strong> Deve includere le colonne: <em>ID attività, Nome (o attività), Nome struttura, WBS Lavorazione, WBS Materiale, Data d'inizio, Data di fine</em>.</li>
-        <li><strong>Abachi Quantità:</strong> Devono includere: <em>WBS Lavorazione, WBS Materiale, Struttura</em> (opzionale ma consigliata) e la colonna dei valori nominata con una di queste parole: <em>Massa, Peso, Quantità</em> o <em>Volume</em>.</li>
+        <li><strong>Abachi Quantità:</strong> Devono includere: <em>WBS Lavorazione, WBS Materiale, Struttura</em> (opzionale ma consigliata) e la colonna dei valori nominata con una di queste parole: <em>Massa, Peso, Quantità</em>.</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
