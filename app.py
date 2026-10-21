@@ -25,6 +25,8 @@ if 'risultati_progettazione' not in st.session_state:
     st.session_state.risultati_progettazione = []
 if 'configurazioni_salvate' not in st.session_state:
     st.session_state.configurazioni_salvate = {}
+if 'df_comp_cantiere' not in st.session_state:
+    st.session_state.df_comp_cantiere = None
 
 # COLORI GRAFICI (Allineati alla foto fornita)
 colori_parametri = {
@@ -714,6 +716,7 @@ if st.session_state.risultati_progettazione:
             return pd.DataFrame(risultati).groupby('Data').sum().reset_index()
         return pd.DataFrame(columns=['Data'])
     
+    # SALVO I DATI IN SESSION_STATE IN MODO CHE NON SPARISCANO AI SUCCESSIVI RERUN
     if st.button("Elabora Dati Sensori e Genera Grafici di Confronto", use_container_width=True):
         df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
         
@@ -755,9 +758,18 @@ if st.session_state.risultati_progettazione:
         df_comp['Totale_Cant'] = df_comp['Materiali'] + df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Cant'] + df_comp['Energia_Cant'] + df_comp['Acqua_Cant']
         df_comp = df_comp.sort_values('Data')
 
+        # Salvataggio nel session_state
+        st.session_state.df_comp_cantiere = df_comp
+
+    # IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE, NON DAL PULSANTE
+    if st.session_state.df_comp_cantiere is not None:
+        df_comp = st.session_state.df_comp_cantiere
+        
         # --- GRAFICI DI CONFRONTO ---
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("Confronto Emissioni Giornaliere: Progettazione vs Cantiere Reale")
+        
+        # Il selettore ora può ricaricare la pagina senza far sparire i grafici
         opzione_linee = st.selectbox("Linee di Tendenza (Confronto):", ["Nessuna", "Medie Costanti", "Medie Mobili (Andamento)", "Entrambe"])
         
         def plot_comparison(df, base_col, title, c_prog, c_cant):
