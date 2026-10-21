@@ -310,6 +310,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                     "Viaggi": viaggi,
                     "Distanza [km]": distanza,
                     "Consumo [kg/km]": consumo_medio,
+                    "Fattore Emissivo [kgCO₂ eq/kg]": fattore_carb,
                     "Emissioni [kgCO₂ eq]": round(em_trasporto_i, 2)
                 })
 
