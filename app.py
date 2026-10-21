@@ -225,7 +225,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     st.markdown("---")
     st.markdown("#### Materiali e Rifiuti")
     st.markdown("Le emissioni dei materiali vengono calcolate dalla fase di estrazione della materia prima fino alla creazione del prodotto finale (A1-A3). I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
-    st.markdown("Le emissioni dei rifiuti vengono calcolate dalla fase di trasporto in discarica fino allo smaltimento (C2-C4). La quantità di rifiuti viene dedotta in % rispetto alla quantità di materiale. I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
+    st.markdown("Le emissioni dei rifiuti vengono calcolate dalla fase di trasporto in discarica fino allo smaltimento (C2-C4). La quantità di rifiuti viene inserta da utente in % rispetto alla quantità di materiale. I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
     if quantita_mat > 0:
         materiale_scelto = st.selectbox("Seleziona Tipo Materiale (filtro categoria):", df_epd['Materiale'].dropna().unique())
         df_epd_filtrato = df_epd[df_epd['Materiale'] == materiale_scelto]
@@ -264,6 +264,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         # TRASPORTI MULTIPLI
         st.markdown("---")
         st.markdown("#### Trasporti")
+        st.markdown("Trasporto ipotizzato: max 28 t per una distanza di 30 km. L'utente potrà scegliere il tipo di carburante. I relativi fattori emissivi sono presenti nel database LCI del sito. FONTE fattori emissivi: EMEP (European Enviroment Agency).") 
         if 'Trasporti' in df_lci:
             df_t_sheet = df_lci['Trasporti']
             
