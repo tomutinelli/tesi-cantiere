@@ -28,12 +28,6 @@ if 'configurazioni_salvate' not in st.session_state:
 if 'df_comp_cantiere' not in st.session_state:
     st.session_state.df_comp_cantiere = None
 
-# Variabili di stato per gestire il reset dei campi al cambio attività
-if 'last_attivita' not in st.session_state:
-    st.session_state.last_attivita = ""
-if 'reset_counter' not in st.session_state:
-    st.session_state.reset_counter = 0
-
 # COLORI GRAFICI (Allineati alla foto fornita)
 colori_parametri = {
     'Materiali': "#991b1b", 
@@ -170,11 +164,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     
     attivita_selezionata = st.selectbox("Scegli la lavorazione dal cronoprogramma:", df_crono['Label_Attivita'].tolist())
     
-    # Controllo se l'attività è cambiata rispetto allo stato precedente per forzare il reset
-    if attivita_selezionata != st.session_state.last_attivita:
-        st.session_state.reset_counter += 1
-        st.session_state.last_attivita = attivita_selezionata
-    
     row_att = df_crono[df_crono['Label_Attivita'] == attivita_selezionata].iloc[0]
     
     col_id = next((c for c in df_crono.columns if 'id' in str(c).lower()), df_crono.columns[0])
@@ -186,9 +175,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     nome_att = row_att[col_nome]
     nome_strutt = row_att[col_struttura] if col_struttura else ""
     wbs_lav = row_att[col_wbs_lav] if col_wbs_lav else ""
-    
-    # Chiave univoca combinata con il contatore di reset per aggiornare i campi
-    key_att = f"{str(id_att).replace(' ', '_')}_{st.session_state.reset_counter}"
     
     col_wbs_mat = next((c for c in df_crono.columns if 'wbs materiale' in str(c).lower()), None)
     wbs_mat = row_att[col_wbs_mat] if col_wbs_mat else None
@@ -241,7 +227,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     st.markdown("Le emissioni dei materiali vengono calcolate dalla fase di estrazione della materia prima fino alla creazione del prodotto finale (A1-A3). I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
     st.markdown("Le emissioni dei rifiuti vengono calcolate dalla fase di trasporto in discarica fino allo smaltimento (C2-C4). La quantità di rifiuti viene inserta da utente in % rispetto alla quantità di materiale. I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
     if quantita_mat > 0:
-        materiale_scelto = st.selectbox("Seleziona Tipo Materiale (filtro categoria):", df_epd['Materiale'].dropna().unique(), key=f"mat_cat_{key_att}")
+        materiale_scelto = st.selectbox("Seleziona Tipo Materiale (filtro categoria):", df_epd['Materiale'].dropna().unique())
         df_epd_filtrato = df_epd[df_epd['Materiale'] == materiale_scelto]
         
         col_epd_fe = next((c for c in df_epd_filtrato.columns if 'fattore' in str(c).lower()), df_epd_filtrato.columns[3])
@@ -253,7 +239,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             column_config={col_epd_link: st.column_config.LinkColumn("Link EPD")}, hide_index=True
         )
         
-        scelta_specifica = st.selectbox("Scegli il prodotto specifico per il calcolo:", df_epd_filtrato['Produttore'], key=f"mat_prod_{key_att}")
+        scelta_specifica = st.selectbox("Scegli il prodotto specifico per il calcolo:", df_epd_filtrato['Produttore'])
         fattore_em_mat = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica][col_epd_fe].values[0]
         fattore_em_rif = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica][col_epd_c2].values[0]
         
@@ -262,7 +248,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         
         em_materiali = quantita_mat * fattore_em_mat
         
-        perc_rifiuti = st.number_input("% di rifiuti stimata (sfrido):", min_value=0.0, max_value=100.0, value=0.0, key=f"perc_rif_{key_att}") / 100
+        perc_rifiuti = st.number_input("% di rifiuti stimata (sfrido):", min_value=0.0, max_value=100.0, value=0.0) / 100
         q_rifiuti = quantita_mat * perc_rifiuti
         em_rifiuti = q_rifiuti * fattore_em_rif
         
@@ -295,7 +281,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             viaggi_rif = np.ceil(q_rifiuti / 28000) if q_rifiuti > 0 else 0
             viaggi_tot_stimati = int(viaggi_mat + viaggi_rif)
             
-            num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=1, value=1, step=1, key=f"num_t_{key_att}")
+            num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=1, value=1, step=1)
             
             em_trasporti = 0
             tot_km_progetto = 0
@@ -303,7 +289,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             
             for i in range(num_tipi_trasporto):
                 st.markdown(f"**Mezzo di Trasporto {i+1}**")
-                scelta_mezzo = st.selectbox(f"Seleziona Veicolo/Carburante {i+1}:", df_t_consumi['Label'].unique(), key=f"t_mezzo_{key_att}_{i}")
+                scelta_mezzo = st.selectbox(f"Seleziona Veicolo/Carburante {i+1}:", df_t_consumi['Label'].unique(), key=f"t_mezzo_{i}")
                 row_mezzo = df_t_consumi[df_t_consumi['Label'] == scelta_mezzo].iloc[0]
                 
                 consumo_medio = float(str(row_mezzo['Consumo_Medio']).replace(',', '.'))
@@ -315,9 +301,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 
                 col_t1, col_t2 = st.columns(2)
                 with col_t1:
-                    viaggi = st.number_input(f"Viaggi stimati (mezzo {i+1}):", min_value=0, value=viaggi_tot_stimati if i==0 else 0, key=f"t_viaggi_{key_att}_{i}")
+                    viaggi = st.number_input(f"Viaggi stimati (mezzo {i+1}):", min_value=0, value=viaggi_tot_stimati if i==0 else 0, key=f"t_viaggi_{i}")
                 with col_t2:
-                    distanza = st.number_input(f"Distanza media a viaggio [km] (mezzo {i+1}):", min_value=0.0, value=30.0, key=f"t_dist_{key_att}_{i}")
+                    distanza = st.number_input(f"Distanza media a viaggio [km] (mezzo {i+1}):", min_value=0.0, value=30.0, key=f"t_dist_{i}")
                 
                 em_trasporto_i = viaggi * distanza * consumo_medio * fattore_carb
                 em_trasporti += em_trasporto_i
@@ -350,7 +336,8 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
     durata_giorni = int(row_att[col_durata]) if col_durata else 1
     
-    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1, key=f"num_m_{key_att}")
+    # Modificato min_value a 0 e value di default a 0
+    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1)
     
     em_macchinari = 0
     dati_macchinari_tabella = []
@@ -358,7 +345,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     if num_tipi_macc > 0:
         for i in range(num_tipi_macc):
             st.markdown(f"**Macchinario {i+1}**")
-            macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{key_att}_{i}")
+            macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{i}")
             df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
             
             if col_mac_fe:
@@ -369,7 +356,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                     hide_index=True
                 )
                 
-                macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{key_att}_{i}")
+                macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}")
                 fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore][col_mac_fe].values[0]).replace(',', '.'))
             else:
                 st.warning("Impossibile trovare la colonna delle emissioni nel file macchinari.")
@@ -378,9 +365,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 
             col_m1, col_m2 = st.columns(2)
             with col_m1:
-                num_macc = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{key_att}_{i}")
+                num_macc = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{i}")
             with col_m2:
-                giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{key_att}_{i}")
+                giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{i}")
                 
             em_macc_i = fe_macc_8h * num_macc * giorni_macc
             em_macchinari += em_macc_i
@@ -408,9 +395,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_energia_fe = next((c for c in df_lci['Energia'].columns if 'fattore' in str(c).lower()), df_lci['Energia'].columns[1])
     col_energia_nome = df_lci['Energia'].columns[0]
     
-    tech_energia = st.selectbox("Tecnologia generazione elettrica:", df_lci['Energia'][col_energia_nome].unique(), key=f"e_tech_{key_att}")
+    tech_energia = st.selectbox("Tecnologia generazione elettrica:", df_lci['Energia'][col_energia_nome].unique())
     fe_energia = float(str(df_lci['Energia'][df_lci['Energia'][col_energia_nome] == tech_energia][col_energia_fe].values[0]).replace(',', '.'))
-    kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0, key=f"e_kwh_{key_att}")
+    kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0)
     em_energia = kwh_stimati * fe_energia
     
     df_sum_ene = pd.DataFrame({
@@ -430,9 +417,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_acqua_fe = next((c for c in df_lci['Acqua'].columns if 'fattore' in str(c).lower()), df_lci['Acqua'].columns[1])
     col_acqua_nome = df_lci['Acqua'].columns[0]
     
-    tech_acqua = st.selectbox("Approvvigionamento/Trattamento Acqua:", df_lci['Acqua'][col_acqua_nome].unique(), key=f"a_tech_{key_att}")
+    tech_acqua = st.selectbox("Approvvigionamento/Trattamento Acqua:", df_lci['Acqua'][col_acqua_nome].unique())
     fe_acqua = float(str(df_lci['Acqua'][df_lci['Acqua'][col_acqua_nome] == tech_acqua][col_acqua_fe].values[0]).replace(',', '.'))
-    litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0, key=f"a_litri_{key_att}")
+    litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0)
     em_acqua = litri_stimati * fe_acqua
     
     df_sum_acq = pd.DataFrame({
@@ -445,7 +432,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     st.dataframe(df_sum_acq, hide_index=True)
     
     st.markdown("---")
-    if st.button("Salva / Aggiorna Calcolo per questa Attività", use_container_width=True):
+    if st.button("Salva Calcolo per questa Attività", use_container_width=True):
         totale_eq = em_materiali + em_rifiuti + em_macchinari + em_trasporti + em_energia + em_acqua
         
         record = {
@@ -471,7 +458,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         lista_ris = [r for r in st.session_state.risultati_progettazione if r['Attività'] != row_att['Label_Attivita']]
         lista_ris.append(record)
         st.session_state.risultati_progettazione = sorted(lista_ris, key=lambda x: x['Data Inizio'])
-        st.success("Attività salvata (o aggiornata) con successo! Scorri in basso per i risultati aggiornati.")
+        st.success("Attività salvata con successo! Scorri in basso per i risultati aggiornati.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -782,18 +769,14 @@ if st.session_state.risultati_progettazione:
         for col in ['Trasporti_Cant', 'Energia_Cant', 'Acqua_Cant', 'Materiali', 'Rifiuti', 'Macchinari', 'Trasporti_Prog', 'Energia_Prog', 'Acqua_Prog']:
             if col not in df_comp: df_comp[col] = 0
             
-        # Calcolo Colonna "Altri Processi" oltre al "Totale" per soddisfare la richiesta    
-        df_comp['Altri_Processi_Prog'] = df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Prog'] + df_comp['Energia_Prog'] + df_comp['Acqua_Prog']
-        df_comp['Altri_Processi_Cant'] = df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Cant'] + df_comp['Energia_Cant'] + df_comp['Acqua_Cant']
-            
-        df_comp['Totale_Prog'] = df_comp['Materiali'] + df_comp['Altri_Processi_Prog']
-        df_comp['Totale_Cant'] = df_comp['Materiali'] + df_comp['Altri_Processi_Cant']
+        df_comp['Totale_Prog'] = df_comp['Materiali'] + df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Prog'] + df_comp['Energia_Prog'] + df_comp['Acqua_Prog']
+        df_comp['Totale_Cant'] = df_comp['Materiali'] + df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Cant'] + df_comp['Energia_Cant'] + df_comp['Acqua_Cant']
         df_comp = df_comp.sort_values('Data')
 
         # Salvataggio nel session_state
         st.session_state.df_comp_cantiere = df_comp
 
-   # IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE E HA IL FILTRO TEMPORALE E AMBITO
+   # IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE E HA IL FILTRO TEMPORALE
     if st.session_state.df_comp_cantiere is not None:
         df_comp = st.session_state.df_comp_cantiere.copy()
         df_comp['Data'] = pd.to_datetime(df_comp['Data'])
@@ -805,7 +788,7 @@ if st.session_state.risultati_progettazione:
         min_date_c = df_comp['Data'].min().date() if not df_comp.empty else pd.Timestamp.now().date()
         max_date_c = df_comp['Data'].max().date() if not df_comp.empty else pd.Timestamp.now().date()
         
-        col_cfil1, col_cfil2, col_cfil3 = st.columns([1, 1, 1])
+        col_cfil1, col_cfil2 = st.columns(2)
         with col_cfil1:
             date_range_c = st.date_input(
                 "Seleziona l'intervallo temporale da analizzare:", 
@@ -813,8 +796,6 @@ if st.session_state.risultati_progettazione:
             )
         with col_cfil2:
             opzione_linee = st.selectbox("Linee di Tendenza (Confronto):", ["Nessuna", "Medie Costanti", "Medie Mobili (Andamento)", "Entrambe"])
-        with col_cfil3:
-            ambito_gwp_cantiere = st.selectbox("Ambito GWP Grafici:", ["GWP Totale", "GWP Altri Processi"], key="ambito_cant")
             
         if isinstance(date_range_c, tuple) and len(date_range_c) == 2:
             start_filter_c, end_filter_c = date_range_c
@@ -850,8 +831,7 @@ if st.session_state.risultati_progettazione:
                 fig.update_layout(title=title, barmode='group', hovermode="x unified", xaxis_title="Settimana", yaxis_title="Emissioni [kgCO₂ eq]")
                 return fig
 
-            base_col_main = 'Totale' if ambito_gwp_cantiere == "GWP Totale" else 'Altri_Processi'
-            st.plotly_chart(plot_comparison(df_weekly, base_col_main, f"{ambito_gwp_cantiere}: Progetto vs Reale", "#64748b", "#0f172a"), use_container_width=True)
+            st.plotly_chart(plot_comparison(df_weekly, 'Totale', "GWP Totale: Progetto vs Reale", "#64748b", "#0f172a"), use_container_width=True)
             
             col_g1, col_g2 = st.columns(2)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
@@ -859,4 +839,3 @@ if st.session_state.risultati_progettazione:
             col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#fde047", "#a16207"), use_container_width=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
-```<FollowUp label="Scopri un'altra aggiunta potenziale" query="Vuoi un modo per permettere all'utente di esportare tutti i risultati generati in un report riepilogativo in formato PDF o Excel direttamente da Streamlit?"/>
