@@ -224,7 +224,8 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     # MATERIALI E RIFIUTI
     st.markdown("---")
     st.markdown("#### Materiali e Rifiuti")
-    st.markdown("Le emissioni dei materiali vengono calcolate dalla fase di estrazione della materia prima fino alla creazione del prodotto finale (A1-A3). Le emissioni prodotte sono dunque le cosiddette 'Embodied carbon'")
+    st.markdown("Le emissioni dei materiali vengono calcolate dalla fase di estrazione della materia prima fino alla creazione del prodotto finale (A1-A3). I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
+     st.markdown("Le emissioni dei rifiuti vengono calcolate dalla fase di trasporto in discarica fino allo smaltimento (C2-C4). La quantità di rifiuti viene dedotta in % rispetto alla quantità di materiale. I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
     if quantita_mat > 0:
         materiale_scelto = st.selectbox("Seleziona Tipo Materiale (filtro categoria):", df_epd['Materiale'].dropna().unique())
         df_epd_filtrato = df_epd[df_epd['Materiale'] == materiale_scelto]
