@@ -217,7 +217,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 quantita_mat = massa_pulita.sum()
 
     
-    st.info(f"Quantità materiale associata a questa attività (tramite WBS): **{quantita_mat:,.2f}** kg")
+    st.info(f"Quantità materiale associata a questa attività: **{quantita_mat:,.2f}** kg")
     
     em_materiali, em_rifiuti, em_trasporti, em_energia, em_acqua, em_macchinari = 0, 0, 0, 0, 0, 0
     
@@ -264,7 +264,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         # TRASPORTI MULTIPLI
         st.markdown("---")
         st.markdown("#### Trasporti")
-        st.markdown("Trasporto ipotizzato: max 28 t per una distanza di 30 km. L'utente potrà scegliere il tipo di carburante. I relativi fattori emissivi sono presenti nel database LCI del sito.") 
+        st.markdown("Trasporto ipotizzato: max 28 t per una distanza di 30 km. L'utente potrà scegliere il tipo di carburante e i relativi fattori emissivi sono presenti nel database LCI del sito.") 
         st.markdown("FONTE fattori emissivi: EMEP (European Enviroment Agency).") 
         if 'Trasporti' in df_lci:
             df_t_sheet = df_lci['Trasporti']
@@ -331,6 +331,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
   # MACCHINARI MULTIPLI
     st.markdown("---")
     st.markdown("#### Macchinari")
+    st.markdown("Il calcolo delle emissioni dei macchinari si basa sul prodotto analitico tra la potenza nominale del motore, il consumo specifico di combustibile per unità di energia, il fattore di carico medio (tempo effettivo di funzionamento del macchinario nelle 8 ore lavorative), le ore lavorative giornaliere di un turno standard pari a 8 ore e il fattore emissivo del carburante.")
     col_mac_fe = next((c for c in df_macc.columns if 'giorno' in str(c).lower()), df_macc.columns[3] if len(df_macc.columns) > 3 else None)
     col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
     durata_giorni = int(row_att[col_durata]) if col_durata else 1
