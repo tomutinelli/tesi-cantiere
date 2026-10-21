@@ -791,13 +791,21 @@ if st.session_state.risultati_progettazione:
         col_cfil1, col_cfil2, col_cfil3 = st.columns(3)
         with col_cfil1:
             date_range_c = st.date_input(
-                "Seleziona l'intervallo temporale da analizzare:", 
+                "Seleziona l'intervallo temporale:", 
                 value=(min_date_c, max_date_c), min_value=min_date_c, max_value=max_date_c, key="date_comp"
             )
         with col_cfil2:
-            opzione_linee = st.selectbox("Linee di Tendenza (Confronto):", ["Nessuna", "Medie Costanti", "Medie Mobili (Andamento)", "Entrambe"])
+            opzione_linee = st.selectbox(
+                "Linee di Tendenza:", 
+                ["Nessuna", "Media Costante", "Andamento Medio (Media Mobile)", "Entrambe"], 
+                key="linee_comp"
+            )
         with col_cfil3:
-            ambito_gwp_cant = st.selectbox("Ambito GWP Confronto:", ["GWP Totale", "GWP Altri Processi"])
+            ambito_gwp_cant = st.selectbox(
+                "Ambito GWP Grafici:", 
+                ["GWP Totale", "GWP Altri Processi"], 
+                key="ambito_comp"
+            )
             
         if isinstance(date_range_c, tuple) and len(date_range_c) == 2:
             start_filter_c, end_filter_c = date_range_c
@@ -825,12 +833,12 @@ if st.session_state.risultati_progettazione:
                     fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Prog'], name='Progetto', marker_color=c_prog))
                 fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Cant'], name='Cantiere (Reale)', marker_color=c_cant))
                 
-                if opzione_linee in ["Medie Costanti", "Entrambe"]:
+                if opzione_linee in ["Media Costante", "Entrambe"]:
                     if f"{base_col}_Prog" in df: 
                         fig.add_hline(y=df[f'{base_col}_Prog'].mean(), line_dash="dash", line_color=c_prog)
                     fig.add_hline(y=df[f'{base_col}_Cant'].mean(), line_dash="dash", line_color=c_cant)
                 
-                if opzione_linee in ["Medie Mobili (Andamento)", "Entrambe"]:
+                if opzione_linee in ["Andamento Medio (Media Mobile)", "Entrambe"]:
                     if f"{base_col}_Prog" in df: 
                         fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Prog'].rolling(3, min_periods=1).mean(), name='Trend Prog', line=dict(color=c_prog, width=2)))
                     fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Cant'].rolling(3, min_periods=1).mean(), name='Trend Cant', line=dict(color=c_cant, width=2)))
