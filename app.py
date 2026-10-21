@@ -427,7 +427,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         totale_eq = em_materiali + em_rifiuti + em_macchinari + em_trasporti + em_energia + em_acqua
         
         record = {
-            
+            "Attività": row_att['Label_Attivita'],
             "ID": id_att, "Nome": nome_att, "Struttura": nome_strutt, "WBS_L": wbs_lav, "WBS_M": wbs_mat,
             "Durata": durata_giorni, 
             "Data Inizio": row_att['Data_Inizio_Calc'].date(), 
