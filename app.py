@@ -776,7 +776,7 @@ if st.session_state.risultati_progettazione:
         # Salvataggio nel session_state
         st.session_state.df_comp_cantiere = df_comp
 
-   # IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE E HA IL FILTRO TEMPORALE
+# IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE E HA IL FILTRO TEMPORALE
     if st.session_state.df_comp_cantiere is not None:
         df_comp = st.session_state.df_comp_cantiere.copy()
         df_comp['Data'] = pd.to_datetime(df_comp['Data'])
@@ -788,7 +788,7 @@ if st.session_state.risultati_progettazione:
         min_date_c = df_comp['Data'].min().date() if not df_comp.empty else pd.Timestamp.now().date()
         max_date_c = df_comp['Data'].max().date() if not df_comp.empty else pd.Timestamp.now().date()
         
-        col_cfil1, col_cfil2 = st.columns(2)
+        col_cfil1, col_cfil2, col_cfil3 = st.columns(3)
         with col_cfil1:
             date_range_c = st.date_input(
                 "Seleziona l'intervallo temporale da analizzare:", 
@@ -796,6 +796,8 @@ if st.session_state.risultati_progettazione:
             )
         with col_cfil2:
             opzione_linee = st.selectbox("Linee di Tendenza (Confronto):", ["Nessuna", "Medie Costanti", "Medie Mobili (Andamento)", "Entrambe"])
+        with col_cfil3:
+            ambito_gwp_cant = st.selectbox("Ambito GWP Confronto:", ["GWP Totale", "GWP Altri Processi"])
             
         if isinstance(date_range_c, tuple) and len(date_range_c) == 2:
             start_filter_c, end_filter_c = date_range_c
@@ -808,6 +810,11 @@ if st.session_state.risultati_progettazione:
         if not df_comp_filtered.empty:
             # Creazione colonna Settimana e Raggruppamento
             df_comp_filtered['Settimana'] = df_comp_filtered['Data'].dt.strftime('%Y-W%V')
+            
+            # Calcolo le colonne per "Altri Processi" per Progetto e Cantiere
+            df_comp_filtered['Altri_Prog'] = df_comp_filtered['Rifiuti'] + df_comp_filtered['Macchinari'] + df_comp_filtered['Trasporti_Prog'] + df_comp_filtered['Energia_Prog'] + df_comp_filtered['Acqua_Prog']
+            df_comp_filtered['Altri_Cant'] = df_comp_filtered['Rifiuti'] + df_comp_filtered['Macchinari'] + df_comp_filtered['Trasporti_Cant'] + df_comp_filtered['Energia_Cant'] + df_comp_filtered['Acqua_Cant']
+            
             cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana']]
             df_weekly = df_comp_filtered.groupby('Settimana')[cols_to_sum].sum().reset_index()
             
@@ -831,7 +838,11 @@ if st.session_state.risultati_progettazione:
                 fig.update_layout(title=title, barmode='group', hovermode="x unified", xaxis_title="Settimana", yaxis_title="Emissioni [kgCO₂ eq]")
                 return fig
 
-            st.plotly_chart(plot_comparison(df_weekly, 'Totale', "GWP Totale: Progetto vs Reale", "#64748b", "#0f172a"), use_container_width=True)
+            # Logica di visualizzazione in base al menù a tendina
+            if ambito_gwp_cant == "GWP Totale":
+                st.plotly_chart(plot_comparison(df_weekly, 'Totale', "GWP Totale: Progetto vs Reale", "#64748b", "#0f172a"), use_container_width=True)
+            else:
+                st.plotly_chart(plot_comparison(df_weekly, 'Altri', "GWP Altri Processi: Progetto vs Reale", "#64748b", "#0f172a"), use_container_width=True)
             
             col_g1, col_g2 = st.columns(2)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
