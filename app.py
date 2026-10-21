@@ -822,22 +822,5 @@ if st.session_state.risultati_progettazione:
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Acqua', "Acqua", "#38bdf8", "#0369a1"), use_container_width=True)
             col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#fde047", "#a16207"), use_container_width=True)
-
-            # --- EXPORT EXCEL ---
-            st.markdown("### Esportazione Dati")
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                # Esportiamo sia il dato giornaliero filtrato che quello raggruppato
-                df_comp_filtered.drop(columns=['Settimana']).to_excel(writer, sheet_name='Dati Giornalieri', index=False)
-                df_weekly.to_excel(writer, sheet_name='Dati Settimanali', index=False)
-                
-            st.download_button(
-                label="📊 Scarica Database di Confronto (.xlsx)",
-                data=buffer.getvalue(),
-                file_name="Confronto_Progetto_Cantiere.xlsx",
-                mime="application/vnd.ms-excel"
-            )
-        else:
-            st.warning("Nessun dato presente nell'intervallo temporale selezionato.")
             
     st.markdown("</div>", unsafe_allow_html=True)
