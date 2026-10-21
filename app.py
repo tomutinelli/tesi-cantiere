@@ -28,6 +28,12 @@ if 'configurazioni_salvate' not in st.session_state:
 if 'df_comp_cantiere' not in st.session_state:
     st.session_state.df_comp_cantiere = None
 
+# Variabili di stato per gestire il reset dei campi al cambio attività
+if 'last_attivita' not in st.session_state:
+    st.session_state.last_attivita = ""
+if 'reset_counter' not in st.session_state:
+    st.session_state.reset_counter = 0
+
 # COLORI GRAFICI (Allineati alla foto fornita)
 colori_parametri = {
     'Materiali': "#991b1b", 
@@ -164,6 +170,11 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     
     attivita_selezionata = st.selectbox("Scegli la lavorazione dal cronoprogramma:", df_crono['Label_Attivita'].tolist())
     
+    # Controllo se l'attività è cambiata rispetto allo stato precedente per forzare il reset
+    if attivita_selezionata != st.session_state.last_attivita:
+        st.session_state.reset_counter += 1
+        st.session_state.last_attivita = attivita_selezionata
+    
     row_att = df_crono[df_crono['Label_Attivita'] == attivita_selezionata].iloc[0]
     
     col_id = next((c for c in df_crono.columns if 'id' in str(c).lower()), df_crono.columns[0])
@@ -176,8 +187,8 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     nome_strutt = row_att[col_struttura] if col_struttura else ""
     wbs_lav = row_att[col_wbs_lav] if col_wbs_lav else ""
     
-    # Chiave univoca basata sull'ID attività per rigenerare i default quando si cambia attività
-    key_att = str(id_att).replace(" ", "_")
+    # Chiave univoca combinata con il contatore di reset per aggiornare i campi
+    key_att = f"{str(id_att).replace(' ', '_')}_{st.session_state.reset_counter}"
     
     col_wbs_mat = next((c for c in df_crono.columns if 'wbs materiale' in str(c).lower()), None)
     wbs_mat = row_att[col_wbs_mat] if col_wbs_mat else None
@@ -369,7 +380,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             with col_m1:
                 num_macc = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{key_att}_{i}")
             with col_m2:
-                # Ora prende il default specifico della durata di questa lavorazione, se cambiata si resetta
                 giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{key_att}_{i}")
                 
             em_macc_i = fe_macc_8h * num_macc * giorni_macc
@@ -458,7 +468,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             "Acqua": tech_acqua, "FE_Acqua": fe_acqua
         }
         
-        # Questa logica sovrascrive correttamente i dati se l'attività era già stata compilata precedentemente
         lista_ris = [r for r in st.session_state.risultati_progettazione if r['Attività'] != row_att['Label_Attivita']]
         lista_ris.append(record)
         st.session_state.risultati_progettazione = sorted(lista_ris, key=lambda x: x['Data Inizio'])
@@ -850,3 +859,4 @@ if st.session_state.risultati_progettazione:
             col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#fde047", "#a16207"), use_container_width=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
+```<FollowUp label="Scopri un'altra aggiunta potenziale" query="Vuoi un modo per permettere all'utente di esportare tutti i risultati generati in un report riepilogativo in formato PDF o Excel direttamente da Streamlit?"/>
