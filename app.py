@@ -623,9 +623,9 @@ if st.session_state.risultati_progettazione:
         <strong>Istruzioni di Formattazione CSV (Dati Sensori):</strong>
         <ul style='margin-top: 5px; margin-bottom: 0px;'>
             <li><strong>Intestazione:</strong> Tutte le tabelle devono riportare le colonne <em>ID attività</em> e <em>Data</em> per potersi allacciare al calcolo in progetto.</li>
-            <li><strong>Trasporti:</strong> Colonna nominata <em>Km_percorsi</em> e colonna <em>Carburante</em> per prelevare in automatico i FE dal database LCI.</li>
+            <li><strong>Trasporti:</strong> Colonna nominata <em>Km_percorsi</em> e colonna <em>Carburante</em> per prelevare in automatico i fattori emissivi dal database LCI.</li>
             <li><strong>Energia:</strong> Colonna <em>consumi_kWh</em> (o simile) e <em>Alimentazione_elettrica</em>.</li>
-            <li><strong>Acqua:</strong> Colonna <em>consumi_l</em> (o simile) e <em>Tipo_acqua</em>.</li>
+            <li><strong>Acqua:</strong> Colonna <em>consumi_l</em> (o simile) e <em>Tipo_acqua</em> (Treatment o Supply).</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
