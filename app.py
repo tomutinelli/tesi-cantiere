@@ -323,57 +323,62 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         st.warning("Nessun materiale trovato per questa attività (Quantità = 0). Sezioni Materiali, Rifiuti e Trasporti avranno emissioni pari a 0.")
         fe_trasporti_medio = 0
         
-    # MACCHINARI MULTIPLI
+  # MACCHINARI MULTIPLI
     st.markdown("---")
     st.markdown("#### Macchinari")
     col_mac_fe = next((c for c in df_macc.columns if 'giorno' in str(c).lower()), df_macc.columns[3] if len(df_macc.columns) > 3 else None)
     col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
     durata_giorni = int(row_att[col_durata]) if col_durata else 1
     
-    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=1, value=1, step=1)
+    # Modificato min_value a 0 e value di default a 0
+    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1)
     
     em_macchinari = 0
     dati_macchinari_tabella = []
     
-    for i in range(num_tipi_macc):
-        st.markdown(f"**Macchinario {i+1}**")
-        macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{i}")
-        df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
-        
-        if col_mac_fe:
-            col_macc_link = next((c for c in df_macc_filt.columns if 'link' in str(c).lower()), df_macc_filt.columns[-1])
-            st.dataframe(
-                df_macc_filt[['Macchinario', 'Produttore', col_mac_fe, col_macc_link]],
-                column_config={col_macc_link: st.column_config.LinkColumn("Link Schede Tecniche")},
-                hide_index=True
-            )
+    if num_tipi_macc > 0:
+        for i in range(num_tipi_macc):
+            st.markdown(f"**Macchinario {i+1}**")
+            macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{i}")
+            df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
             
-            macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}")
-            fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore][col_mac_fe].values[0]).replace(',', '.'))
-        else:
-            st.warning("Impossibile trovare la colonna delle emissioni nel file macchinari.")
-            fe_macc_8h = 0.0
-            macc_produttore = "N/A"
+            if col_mac_fe:
+                col_macc_link = next((c for c in df_macc_filt.columns if 'link' in str(c).lower()), df_macc_filt.columns[-1])
+                st.dataframe(
+                    df_macc_filt[['Macchinario', 'Produttore', col_mac_fe, col_macc_link]],
+                    column_config={col_macc_link: st.column_config.LinkColumn("Link Schede Tecniche")},
+                    hide_index=True
+                )
+                
+                macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}")
+                fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore][col_mac_fe].values[0]).replace(',', '.'))
+            else:
+                st.warning("Impossibile trovare la colonna delle emissioni nel file macchinari.")
+                fe_macc_8h = 0.0
+                macc_produttore = "N/A"
+                
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                num_macc = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{i}")
+            with col_m2:
+                giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{i}")
+                
+            em_macc_i = fe_macc_8h * num_macc * giorni_macc
+            em_macchinari += em_macc_i
             
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            num_macc = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{i}")
-        with col_m2:
-            giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{i}")
+            dati_macchinari_tabella.append({
+                "Voce": f"Macchinario {i+1}",
+                "Num. Macchine": num_macc,
+                "Giorni": giorni_macc,
+                "Fattore Emissivo [kgCO₂ eq/giorno]": f"{fe_macc_8h:,.2f}",
+                "Emissioni [kgCO₂ eq]": f"{em_macc_i:,.2f}"
+            })
             
-        em_macc_i = fe_macc_8h * num_macc * giorni_macc
-        em_macchinari += em_macc_i
+        st.markdown("**Riepilogo Macchinari:**")
+        st.dataframe(pd.DataFrame(dati_macchinari_tabella), hide_index=True)
+    else:
+        st.info("Nessun macchinario previsto per questa attività.")
         
-        dati_macchinari_tabella.append({
-            "Voce": f"Macchinario {i+1}",
-            "Num. Macchine": num_macc,
-            "Giorni": giorni_macc,
-            "Fattore Emissivo [kgCO₂ eq/giorno]": f"{fe_macc_8h:,.2f}",
-            "Emissioni [kgCO₂ eq]": f"{em_macc_i:,.2f}"
-        })
-        
-    st.markdown("**Riepilogo Macchinari:**")
-    st.dataframe(pd.DataFrame(dati_macchinari_tabella), hide_index=True)
     st.write(f"**Totale Emissioni Macchinari:** {em_macchinari:,.2f} kgCO₂ eq")
     
     # ENERGIA
