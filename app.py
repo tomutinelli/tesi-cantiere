@@ -761,50 +761,83 @@ if st.session_state.risultati_progettazione:
         # Salvataggio nel session_state
         st.session_state.df_comp_cantiere = df_comp
 
-    # IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE, NON DAL PULSANTE
+   # IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE E HA IL FILTRO TEMPORALE
     if st.session_state.df_comp_cantiere is not None:
-        df_comp = st.session_state.df_comp_cantiere
+        df_comp = st.session_state.df_comp_cantiere.copy()
+        df_comp['Data'] = pd.to_datetime(df_comp['Data'])
         
-        # --- GRAFICI DI CONFRONTO ---
         st.markdown("<hr>", unsafe_allow_html=True)
-        st.subheader("Confronto Emissioni Giornaliere: Progettazione vs Cantiere Reale")
+        st.subheader("Confronto Emissioni Settimanali: Progettazione vs Cantiere Reale")
         
-        # Il selettore ora può ricaricare la pagina senza far sparire i grafici
-        opzione_linee = st.selectbox("Linee di Tendenza (Confronto):", ["Nessuna", "Medie Costanti", "Medie Mobili (Andamento)", "Entrambe"])
+        # --- FILTRO TEMPORALE E OPZIONI ---
+        min_date_c = df_comp['Data'].min().date() if not df_comp.empty else pd.Timestamp.now().date()
+        max_date_c = df_comp['Data'].max().date() if not df_comp.empty else pd.Timestamp.now().date()
         
-        def plot_comparison(df, base_col, title, c_prog, c_cant):
-            fig = go.Figure()
-            if f"{base_col}_Prog" in df: fig.add_trace(go.Bar(x=df['Data'], y=df[f'{base_col}_Prog'], name='Progetto', marker_color=c_prog))
-            fig.add_trace(go.Bar(x=df['Data'], y=df[f'{base_col}_Cant'], name='Cantiere (Reale)', marker_color=c_cant))
+        col_cfil1, col_cfil2 = st.columns(2)
+        with col_cfil1:
+            date_range_c = st.date_input(
+                "Seleziona l'intervallo temporale da analizzare:", 
+                value=(min_date_c, max_date_c), min_value=min_date_c, max_value=max_date_c, key="date_comp"
+            )
+        with col_cfil2:
+            opzione_linee = st.selectbox("Linee di Tendenza (Confronto):", ["Nessuna", "Medie Costanti", "Medie Mobili (Andamento)", "Entrambe"])
             
-            if opzione_linee in ["Medie Costanti", "Entrambe"]:
-                if f"{base_col}_Prog" in df: fig.add_hline(y=df[f'{base_col}_Prog'].mean(), line_dash="dash", line_color=c_prog)
-                fig.add_hline(y=df[f'{base_col}_Cant'].mean(), line_dash="dash", line_color=c_cant)
+        if isinstance(date_range_c, tuple) and len(date_range_c) == 2:
+            start_filter_c, end_filter_c = date_range_c
+        else:
+            start_filter_c, end_filter_c = min_date_c, max_date_c
             
-            if opzione_linee in ["Medie Mobili (Andamento)", "Entrambe"]:
-                if f"{base_col}_Prog" in df: fig.add_trace(go.Scatter(x=df['Data'], y=df[f'{base_col}_Prog'].rolling(3, min_periods=1).mean(), name='Trend Prog', line=dict(color=c_prog, width=2)))
-                fig.add_trace(go.Scatter(x=df['Data'], y=df[f'{base_col}_Cant'].rolling(3, min_periods=1).mean(), name='Trend Cant', line=dict(color=c_cant, width=2)))
+        # Filtro il DataFrame in base alle date scelte
+        df_comp_filtered = df_comp[(df_comp['Data'].dt.date >= start_filter_c) & (df_comp['Data'].dt.date <= end_filter_c)].copy()
+        
+        if not df_comp_filtered.empty:
+            # Creazione colonna Settimana e Raggruppamento
+            df_comp_filtered['Settimana'] = df_comp_filtered['Data'].dt.strftime('%Y-W%V')
+            cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana']]
+            df_weekly = df_comp_filtered.groupby('Settimana')[cols_to_sum].sum().reset_index()
+            
+            # --- GRAFICI DI CONFRONTO SETTIMANALI ---
+            def plot_comparison(df, base_col, title, c_prog, c_cant):
+                fig = go.Figure()
+                if f"{base_col}_Prog" in df: 
+                    fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Prog'], name='Progetto', marker_color=c_prog))
+                fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Cant'], name='Cantiere (Reale)', marker_color=c_cant))
                 
-            fig.update_layout(title=title, barmode='group', hovermode="x unified")
-            return fig
+                if opzione_linee in ["Medie Costanti", "Entrambe"]:
+                    if f"{base_col}_Prog" in df: 
+                        fig.add_hline(y=df[f'{base_col}_Prog'].mean(), line_dash="dash", line_color=c_prog)
+                    fig.add_hline(y=df[f'{base_col}_Cant'].mean(), line_dash="dash", line_color=c_cant)
+                
+                if opzione_linee in ["Medie Mobili (Andamento)", "Entrambe"]:
+                    if f"{base_col}_Prog" in df: 
+                        fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Prog'].rolling(3, min_periods=1).mean(), name='Trend Prog', line=dict(color=c_prog, width=2)))
+                    fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Cant'].rolling(3, min_periods=1).mean(), name='Trend Cant', line=dict(color=c_cant, width=2)))
+                    
+                fig.update_layout(title=title, barmode='group', hovermode="x unified", xaxis_title="Settimana", yaxis_title="Emissioni [kgCO₂ eq]")
+                return fig
 
-        st.plotly_chart(plot_comparison(df_comp, 'Totale', "GWP Totale: Progetto vs Reale", "#64748b", "#0f172a"), use_container_width=True)
-        
-        col_g1, col_g2 = st.columns(2)
-        col_g1.plotly_chart(plot_comparison(df_comp, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
-        col_g1.plotly_chart(plot_comparison(df_comp, 'Acqua', "Acqua", "#38bdf8", "#0369a1"), use_container_width=True)
-        col_g2.plotly_chart(plot_comparison(df_comp, 'Energia', "Energia Elettrica", "#fde047", "#a16207"), use_container_width=True)
+            st.plotly_chart(plot_comparison(df_weekly, 'Totale', "GWP Totale: Progetto vs Reale", "#64748b", "#0f172a"), use_container_width=True)
+            
+            col_g1, col_g2 = st.columns(2)
+            col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
+            col_g1.plotly_chart(plot_comparison(df_weekly, 'Acqua', "Acqua", "#38bdf8", "#0369a1"), use_container_width=True)
+            col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#fde047", "#a16207"), use_container_width=True)
 
-        # --- EXPORT EXCEL ---
-        st.markdown("### Esportazione Dati")
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            df_comp.to_excel(writer, sheet_name='Confronto Cantiere', index=False)
-        st.download_button(
-            label="📊 Scarica Database di Confronto (.xlsx)",
-            data=buffer.getvalue(),
-            file_name="Confronto_Progetto_Cantiere.xlsx",
-            mime="application/vnd.ms-excel"
-        )
-        
+            # --- EXPORT EXCEL ---
+            st.markdown("### Esportazione Dati")
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                # Esportiamo sia il dato giornaliero filtrato che quello raggruppato
+                df_comp_filtered.drop(columns=['Settimana']).to_excel(writer, sheet_name='Dati Giornalieri', index=False)
+                df_weekly.to_excel(writer, sheet_name='Dati Settimanali', index=False)
+                
+            st.download_button(
+                label="📊 Scarica Database di Confronto (.xlsx)",
+                data=buffer.getvalue(),
+                file_name="Confronto_Progetto_Cantiere.xlsx",
+                mime="application/vnd.ms-excel"
+            )
+        else:
+            st.warning("Nessun dato presente nell'intervallo temporale selezionato.")
+            
     st.markdown("</div>", unsafe_allow_html=True)
