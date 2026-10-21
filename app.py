@@ -390,6 +390,8 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     # ENERGIA
     st.markdown("---")
     st.markdown("#### Energia Elettrica")
+    st.markdown("Il calcolo delle emissioni per l'energia elettrica si basa sul prodotto tra il consumo effettivo in kilowattora (kWh) e il fattore emissivo specifico della tecnologia di generazione selezionata.")
+    st.markdown("FONTE fattori emissivi: ISPRA (Istituto Superiore per la Protezione e la Ricerca Ambientale).")
     col_energia_fe = next((c for c in df_lci['Energia'].columns if 'fattore' in str(c).lower()), df_lci['Energia'].columns[1])
     col_energia_nome = df_lci['Energia'].columns[0]
     
@@ -410,6 +412,8 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     # ACQUA
     st.markdown("---")
     st.markdown("#### Acqua")
+    st.markdown("Il calcolo moltiplica il volume consumato in litri per il fattore emissivo associato alla specifica tipologia di approvvigionamento o trattamento idrico.")
+    st.markdown("FONTE fattori emissivi: GHG (GreenHouse Gas emissions).")
     col_acqua_fe = next((c for c in df_lci['Acqua'].columns if 'fattore' in str(c).lower()), df_lci['Acqua'].columns[1])
     col_acqua_nome = df_lci['Acqua'].columns[0]
     
