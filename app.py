@@ -30,12 +30,12 @@ if 'df_comp_cantiere' not in st.session_state:
 
 # COLORI GRAFICI (Allineati alla foto fornita)
 colori_parametri = {
-    'Materiali': "#991b1b", 
+    'Materiali': "#FF2800", 
     'Rifiuti': "#166534", 
     'Trasporti': "#0ABAB5", 
-    'Energia': "#FBEC5D",
+    'Energia': "#FFD700",
     'Acqua': "#0369a1", 
-    'Macchinari': "#E5E4E2"
+    'Macchinari': "#D1D0CE"
 }
 
 # --- FUNZIONI DI CARICAMENTO DATI STATICI ---
