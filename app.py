@@ -578,7 +578,7 @@ if st.session_state.risultati_progettazione:
         
         fig_totale_assoluto = px.bar(
             df_totale_assoluto, x="Settimana", y="Emissioni [kgCO₂ eq]", hover_data=["Attività"],
-            title=f"Andamento Complessivo - {ambito_gwp}", color_discrete_sequence=["#084C61"]
+            title=f"Andamento Complessivo - {ambito_gwp}", color_discrete_sequence=["#01796F"]
         )
         if mostra_media_costante and not df_week_tot.empty:
             media_tot = df_week_tot['Emissioni [kgCO₂ eq]'].mean()
