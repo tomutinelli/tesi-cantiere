@@ -171,7 +171,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_struttura = next((c for c in df_crono.columns if 'struttura' in str(c).lower()), None)
     col_wbs_lav = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), None)
     
-    id_att = row_att[col_id]
+    id_att = str(row_att[col_id]) # Castato a stringa per usarlo in modo sicuro nelle key dei widget
     nome_att = row_att[col_nome]
     nome_strutt = row_att[col_struttura] if col_struttura else ""
     wbs_lav = row_att[col_wbs_lav] if col_wbs_lav else ""
@@ -251,7 +251,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         
         em_materiali = quantita_mat * fattore_em_mat
         
-        perc_rifiuti = st.number_input("% di rifiuti stimata (sfrido):", min_value=0.0, max_value=100.0, value=0.0) / 100
+        perc_rifiuti = st.number_input("% di rifiuti stimata (sfrido):", min_value=0.0, max_value=100.0, value=0.0, key=f"rif_{id_att}") / 100
         q_rifiuti = quantita_mat * perc_rifiuti
         em_rifiuti = q_rifiuti * fattore_em_rif
         
@@ -270,7 +270,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     st.markdown("---")
     st.markdown("#### Trasporti")
     st.markdown("Trasporto ipotizzato: max 28 t per una distanza di 30 km. L'utente potrà scegliere il tipo di carburante e i relativi fattori emissivi sono presenti nel database LCI del sito.") 
-    st.markdown("FONTE fattori emissivi: EMEP/EEA (European Enviroment Agency).") 
+    st.markdown("FONTE fattori emissivi: EMEP (European Enviroment Agency).") 
     
     if 'Trasporti' in df_lci:
         df_t_sheet = df_lci['Trasporti']
@@ -288,7 +288,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         viaggi_tot_stimati = int(viaggi_mat + viaggi_rif)
         
         default_mezzi = 1 if viaggi_tot_stimati > 0 else 0
-        num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=0, value=default_mezzi, step=1)
+        num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=0, value=default_mezzi, step=1, key=f"num_trasporti_{id_att}")
         
         em_trasporti = 0
         tot_km_progetto = 0
@@ -297,7 +297,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         if num_tipi_trasporto > 0:
             for i in range(num_tipi_trasporto):
                 st.markdown(f"**Mezzo di Trasporto {i+1}**")
-                scelta_mezzo = st.selectbox(f"Seleziona Veicolo/Carburante {i+1}:", df_t_consumi['Label'].unique(), key=f"t_mezzo_{i}")
+                scelta_mezzo = st.selectbox(f"Seleziona Veicolo/Carburante {i+1}:", df_t_consumi['Label'].unique(), key=f"t_mezzo_{i}_{id_att}")
                 row_mezzo = df_t_consumi[df_t_consumi['Label'] == scelta_mezzo].iloc[0]
                 
                 consumo_medio = float(str(row_mezzo['Consumo_Medio']).replace(',', '.'))
@@ -309,9 +309,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 
                 col_t1, col_t2 = st.columns(2)
                 with col_t1:
-                    viaggi = st.number_input(f"Viaggi stimati (mezzo {i+1}):", min_value=0, value=viaggi_tot_stimati if i==0 else 0, key=f"t_viaggi_{i}")
+                    viaggi = st.number_input(f"Viaggi stimati (mezzo {i+1}):", min_value=0, value=viaggi_tot_stimati if i==0 else 0, key=f"t_viaggi_{i}_{id_att}")
                 with col_t2:
-                    distanza = st.number_input(f"Distanza media a viaggio [km] (mezzo {i+1}):", min_value=0.0, value=30.0, key=f"t_dist_{i}")
+                    distanza = st.number_input(f"Distanza media a viaggio [km] (mezzo {i+1}):", min_value=0.0, value=30.0, key=f"t_dist_{i}_{id_att}")
                 
                 em_trasporto_i = viaggi * distanza * consumo_medio * fattore_carb
                 em_trasporti += em_trasporto_i
@@ -344,7 +344,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
     durata_giorni = int(row_att[col_durata]) if col_durata else 1
     
-    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1)
+    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1, key=f"num_macc_{id_att}")
     
     em_macchinari = 0
     dati_macchinari_tabella = []
@@ -352,7 +352,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     if num_tipi_macc > 0:
         for i in range(num_tipi_macc):
             st.markdown(f"**Macchinario {i+1}**")
-            macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{i}")
+            macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{i}_{id_att}")
             df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
             
             if col_mac_fe:
@@ -363,7 +363,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                     hide_index=True
                 )
                 
-                macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}")
+                macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}_{id_att}")
                 fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore][col_mac_fe].values[0]).replace(',', '.'))
             else:
                 st.warning("Impossibile trovare la colonna delle emissioni nel file macchinari.")
@@ -372,16 +372,16 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 
             col_m1, col_m2 = st.columns(2)
             with col_m1:
-                num_macc = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{i}")
+                num_macc_input = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{i}_{id_att}")
             with col_m2:
-                giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{i}")
+                giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{i}_{id_att}")
                 
-            em_macc_i = fe_macc_8h * num_macc * giorni_macc
+            em_macc_i = fe_macc_8h * num_macc_input * giorni_macc
             em_macchinari += em_macc_i
             
             dati_macchinari_tabella.append({
                 "Voce": f"Macchinario {i+1}",
-                "Num. Macchine": num_macc,
+                "Num. Macchine": num_macc_input,
                 "Giorni": giorni_macc,
                 "Fattore Emissivo [kgCO₂ eq/giorno]": f"{fe_macc_8h:,.2f}",
                 "Emissioni [kgCO₂ eq]": f"{em_macc_i:,.2f}"
@@ -402,9 +402,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_energia_fe = next((c for c in df_lci['Energia'].columns if 'fattore' in str(c).lower()), df_lci['Energia'].columns[1])
     col_energia_nome = df_lci['Energia'].columns[0]
     
-    tech_energia = st.selectbox("Tecnologia generazione elettrica:", df_lci['Energia'][col_energia_nome].unique())
+    tech_energia = st.selectbox("Tecnologia generazione elettrica:", df_lci['Energia'][col_energia_nome].unique(), key=f"tech_ene_{id_att}")
     fe_energia = float(str(df_lci['Energia'][df_lci['Energia'][col_energia_nome] == tech_energia][col_energia_fe].values[0]).replace(',', '.'))
-    kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0)
+    kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0, key=f"kwh_{id_att}")
     em_energia = kwh_stimati * fe_energia
     
     df_sum_ene = pd.DataFrame({
@@ -424,9 +424,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_acqua_fe = next((c for c in df_lci['Acqua'].columns if 'fattore' in str(c).lower()), df_lci['Acqua'].columns[1])
     col_acqua_nome = df_lci['Acqua'].columns[0]
     
-    tech_acqua = st.selectbox("Approvvigionamento/Trattamento Acqua:", df_lci['Acqua'][col_acqua_nome].unique())
+    tech_acqua = st.selectbox("Approvvigionamento/Trattamento Acqua:", df_lci['Acqua'][col_acqua_nome].unique(), key=f"tech_acq_{id_att}")
     fe_acqua = float(str(df_lci['Acqua'][df_lci['Acqua'][col_acqua_nome] == tech_acqua][col_acqua_fe].values[0]).replace(',', '.'))
-    litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0)
+    litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0, key=f"litri_{id_att}")
     em_acqua = litri_stimati * fe_acqua
     
     df_sum_acq = pd.DataFrame({
