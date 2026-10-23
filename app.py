@@ -216,16 +216,19 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 massa_pulita = pd.to_numeric(massa_str.replace({',': '.'}, regex=True), errors='coerce').fillna(0)
                 quantita_mat = massa_pulita.sum()
 
-    
     st.info(f"Quantità materiale associata a questa attività: **{quantita_mat:,.2f}** kg")
     
+    # Inizializzazione variabili
     em_materiali, em_rifiuti, em_trasporti, em_energia, em_acqua, em_macchinari = 0, 0, 0, 0, 0, 0
+    q_rifiuti = 0
+    fe_trasporti_medio = 0
     
     # MATERIALI E RIFIUTI
     st.markdown("---")
     st.markdown("#### Materiali e Rifiuti")
     st.markdown("Le emissioni dei materiali vengono calcolate dalla fase di estrazione della materia prima fino alla creazione del prodotto finale (A1-A3). I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
     st.markdown("Le emissioni dei rifiuti vengono calcolate dalla fase di trasporto in discarica fino allo smaltimento (C2-C4). La quantità di rifiuti viene inserta da utente in % rispetto alla quantità di materiale. I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
+    
     if quantita_mat > 0:
         materiale_scelto = st.selectbox("Seleziona Tipo Materiale (filtro categoria):", df_epd['Materiale'].dropna().unique())
         df_epd_filtrato = df_epd[df_epd['Materiale'] == materiale_scelto]
@@ -260,33 +263,38 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         })
         st.markdown("**Riepilogo Materiali e Rifiuti:**")
         st.dataframe(df_sum_mat, hide_index=True)
+    else:
+        st.info("Nessun materiale in ingresso associato a questa attività. Emissioni per Materiali e Rifiuti pari a 0.")
         
-        # TRASPORTI MULTIPLI
-        st.markdown("---")
-        st.markdown("#### Trasporti")
-        st.markdown("Trasporto ipotizzato: max 28 t per una distanza di 30 km. L'utente potrà scegliere il tipo di carburante e i relativi fattori emissivi sono presenti nel database LCI del sito.") 
-        st.markdown("FONTE fattori emissivi: EMEP/EEA (European Enviroment Agency).") 
-        if 'Trasporti' in df_lci:
-            df_t_sheet = df_lci['Trasporti']
-            
-            df_t_emissions = df_t_sheet.iloc[0:9].copy()
-            df_t_emissions.columns = ['Tipologia', 'Carburante', 'Fattore_Emissione']
-            
-            df_t_consumi = df_t_sheet.iloc[11:21].copy()
-            df_t_consumi.columns = ['Tipologia', 'Carburante', 'Consumo_Medio']
-            df_t_consumi = df_t_consumi.dropna(subset=['Tipologia'])
-            df_t_consumi['Label'] = df_t_consumi['Tipologia'].astype(str) + " - " + df_t_consumi['Carburante'].astype(str)
-            
-            viaggi_mat = np.ceil(quantita_mat / 28000)
-            viaggi_rif = np.ceil(q_rifiuti / 28000) if q_rifiuti > 0 else 0
-            viaggi_tot_stimati = int(viaggi_mat + viaggi_rif)
-            
-            num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=1, value=1, step=1)
-            
-            em_trasporti = 0
-            tot_km_progetto = 0
-            dati_trasporto_tabella = []
-            
+    # TRASPORTI MULTIPLI
+    st.markdown("---")
+    st.markdown("#### Trasporti")
+    st.markdown("Trasporto ipotizzato: max 28 t per una distanza di 30 km. L'utente potrà scegliere il tipo di carburante e i relativi fattori emissivi sono presenti nel database LCI del sito.") 
+    st.markdown("FONTE fattori emissivi: EMEP (European Enviroment Agency).") 
+    
+    if 'Trasporti' in df_lci:
+        df_t_sheet = df_lci['Trasporti']
+        
+        df_t_emissions = df_t_sheet.iloc[0:9].copy()
+        df_t_emissions.columns = ['Tipologia', 'Carburante', 'Fattore_Emissione']
+        
+        df_t_consumi = df_t_sheet.iloc[11:21].copy()
+        df_t_consumi.columns = ['Tipologia', 'Carburante', 'Consumo_Medio']
+        df_t_consumi = df_t_consumi.dropna(subset=['Tipologia'])
+        df_t_consumi['Label'] = df_t_consumi['Tipologia'].astype(str) + " - " + df_t_consumi['Carburante'].astype(str)
+        
+        viaggi_mat = np.ceil(quantita_mat / 28000) if quantita_mat > 0 else 0
+        viaggi_rif = np.ceil(q_rifiuti / 28000) if q_rifiuti > 0 else 0
+        viaggi_tot_stimati = int(viaggi_mat + viaggi_rif)
+        
+        default_mezzi = 1 if viaggi_tot_stimati > 0 else 0
+        num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=0, value=default_mezzi, step=1)
+        
+        em_trasporti = 0
+        tot_km_progetto = 0
+        dati_trasporto_tabella = []
+        
+        if num_tipi_trasporto > 0:
             for i in range(num_tipi_trasporto):
                 st.markdown(f"**Mezzo di Trasporto {i+1}**")
                 scelta_mezzo = st.selectbox(f"Seleziona Veicolo/Carburante {i+1}:", df_t_consumi['Label'].unique(), key=f"t_mezzo_{i}")
@@ -322,13 +330,13 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             
             st.markdown("**Riepilogo Trasporti:**")
             st.dataframe(pd.DataFrame(dati_trasporto_tabella), hide_index=True)
-            st.write(f"**Totale Emissioni Trasporti:** {em_trasporti:,.2f} kgCO₂ eq")
+        else:
+            st.info("Nessun mezzo di trasporto previsto per questa attività.")
+            fe_trasporti_medio = 0
             
-    else:
-        st.warning("Nessun materiale trovato per questa attività (Quantità = 0). Sezioni Materiali, Rifiuti e Trasporti avranno emissioni pari a 0.")
-        fe_trasporti_medio = 0
+        st.write(f"**Totale Emissioni Trasporti:** {em_trasporti:,.2f} kgCO₂ eq")
         
-  # MACCHINARI MULTIPLI
+    # MACCHINARI MULTIPLI
     st.markdown("---")
     st.markdown("#### Macchinari")
     st.markdown("Il calcolo delle emissioni dei macchinari si basa sul prodotto analitico tra la potenza nominale del motore, il consumo specifico di combustibile per unità di energia, il fattore di carico medio (tempo effettivo di funzionamento del macchinario nelle 8 ore lavorative), le ore lavorative giornaliere di un turno standard pari a 8 ore e il fattore emissivo del carburante.")
@@ -336,7 +344,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
     durata_giorni = int(row_att[col_durata]) if col_durata else 1
     
-    # Modificato min_value a 0 e value di default a 0
     num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1)
     
     em_macchinari = 0
@@ -449,7 +456,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         
         st.session_state.configurazioni_salvate[row_att['Label_Attivita']] = {
             "Carburante": "Mix" if 'Trasporti' in df_lci else None,
-            "Consumo_mezzo": 1.0 if 'Trasporti' in df_lci else 0, # Impostato a 1, assorbe il fattore effettivo calcolato giù
+            "Consumo_mezzo": 1.0 if 'Trasporti' in df_lci else 0,
             "FE_Trasporti": fe_trasporti_medio if 'Trasporti' in df_lci else 0,
             "Energia": tech_energia, "FE_Energia": fe_energia,
             "Acqua": tech_acqua, "FE_Acqua": fe_acqua
