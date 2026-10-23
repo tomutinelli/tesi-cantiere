@@ -265,7 +265,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         st.markdown("---")
         st.markdown("#### Trasporti")
         st.markdown("Trasporto ipotizzato: max 28 t per una distanza di 30 km. L'utente potrà scegliere il tipo di carburante e i relativi fattori emissivi sono presenti nel database LCI del sito.") 
-        st.markdown("FONTE fattori emissivi: EMEP (European Enviroment Agency).") 
+        st.markdown("FONTE fattori emissivi: EMEP/EEA (European Enviroment Agency).") 
         if 'Trasporti' in df_lci:
             df_t_sheet = df_lci['Trasporti']
             
