@@ -31,7 +31,7 @@ if 'df_comp_cantiere' not in st.session_state:
 # COLORI GRAFICI (Allineati alla foto fornita)
 colori_parametri = {
     'Materiali': "#D2042D", 
-    'Rifiuti': "#166534", 
+    'Rifiuti': "#93C572", 
     'Trasporti': "#0ABAB5", 
     'Energia': "#FFD700",
     'Acqua': "#0369a1", 
