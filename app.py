@@ -878,9 +878,9 @@ if st.session_state.risultati_progettazione:
 
             # Logica di visualizzazione in base al menù a tendina
             if ambito_gwp_cant == "GWP Totale":
-                st.plotly_chart(plot_comparison(df_weekly, 'Totale', "GWP Totale: Progetto vs Reale", "#01796F", "#0f172a"), use_container_width=True)
+                st.plotly_chart(plot_comparison(df_weekly, 'Totale', "GWP Totale: Progetto vs Reale", "#01796F", "#8CD6C4"), use_container_width=True)
             else:
-                st.plotly_chart(plot_comparison(df_weekly, 'Altri', "GWP Altri Processi: Progetto vs Reale", "##01796F", "#0f172a"), use_container_width=True)
+                st.plotly_chart(plot_comparison(df_weekly, 'Altri', "GWP Altri Processi: Progetto vs Reale", "#01796F", "#8CD6C4"), use_container_width=True)
             
             col_g1, col_g2 = st.columns(2)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
