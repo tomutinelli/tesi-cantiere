@@ -884,7 +884,7 @@ if st.session_state.risultati_progettazione:
             
             col_g1, col_g2 = st.columns(2)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
-            col_g1.plotly_chart(plot_comparison(df_weekly, 'Acqua', "Acqua", "#38bdf8", "#0369a1"), use_container_width=True)
-            col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#fde047", "#a16207"), use_container_width=True)
+            col_g1.plotly_chart(plot_comparison(df_weekly, 'Acqua', "Acqua", "#0369a1", "#0369a1"), use_container_width=True)
+            col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#FFD700", "#a16207"), use_container_width=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
