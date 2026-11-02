@@ -521,7 +521,7 @@ if st.session_state.risultati_progettazione:
     # PULSANTE DI ESPORTAZIONE
     csv_export = df_risultati.to_csv(index=False).encode('utf-8-sig')
     st.download_button(
-        label="📥 Scarica CSV Analisi Aggiornata (Esporta per il futuro)",
+        label="Scarica analisi in formato CSV",
         data=csv_export,
         file_name="risultati_analisi_cantiere.csv",
         mime="text/csv",
