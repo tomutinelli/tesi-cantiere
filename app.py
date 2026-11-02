@@ -207,538 +207,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_struttura = next((c for c in df_crono.columns if 'struttura' in str(c).lower()), None)
     col_wbs_lav = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), None)
     
-    id_att = str(row_att[col_id]) 
-    nome_att = row_att[col_nome]
-    nome_strutt = row_att[col_struttura] if col_struttura else ""
-    wbs_lav = row_att[col_wbs_lav] if col_wbs_lav else ""
-    unique_key = str(row_att['Label_Attivita']).replace(" ", "_").replace("-", "_").replace("|", "_")
-    
-    col_wbs_mat = next((c for c in df_crono.columns if 'wbs materiale' in str(c).lower()), None)
-    wbs_mat = row_att[col_wbs_mat] if col_wbs_mat else None
-    
-    quantita_mat = 0
-    if df_quantita is not None and wbs_mat is not None:
-        q_col_lav = next((c for c in df_quantita.columns if 'wbs lav' in str(c).lower()), None)
-        q_col_mat = next((c for c in df_quantita.columns if 'wbs mat' in str(c).lower()), None)
-        q_col_struttura = next((c for c in df_quantita.columns if 'struttura' in str(c).lower()), None)
-        
-        q_col_massa = None
-        for col in df_quantita.columns:
-            col_lower = str(col).lower().strip()
-            if col_lower == 'massa' or col_lower == 'peso' or 'quantit' in col_lower:
-                q_col_massa = col
-                break
-        if not q_col_massa:
-            q_col_massa = next((c for c in df_quantita.columns if 'volume' in str(c).lower()), None)
-        
-        if q_col_lav and q_col_mat and q_col_massa:
-            lav_cron = str(wbs_lav).strip() if pd.notna(wbs_lav) else ""
-            mat_cron = str(wbs_mat).strip() if pd.notna(wbs_mat) else ""
-            struttura_cron = str(nome_strutt).strip() if pd.notna(nome_strutt) else ""
-            
-            lav_q_series = df_quantita[q_col_lav].fillna('').astype(str).str.strip()
-            mat_q_series = df_quantita[q_col_mat].fillna('').astype(str).str.strip()
-            
-            mask = (lav_q_series == lav_cron) & (mat_q_series == mat_cron)
-            
-            if q_col_struttura and struttura_cron:
-                struttura_q_series = df_quantita[q_col_struttura].fillna('').astype(str).str.strip()
-                mask = mask & (struttura_q_series == struttura_cron)
-            
-            match_q = df_quantita[mask]
-            
-            if not match_q.empty:
-                massa_str = match_q[q_col_massa].astype(str).str.replace(r'[^\d,\.-]', '', regex=True)
-                massa_pulita = pd.to_numeric(massa_str.replace({',': '.'}, regex=True), errors='coerce').fillna(0)
-                quantita_mat = massa_pulita.sum()
-
-    st.info(f"Quantità materiale associata a questa attività: **{quantita_mat:,.2f}** kg")
-    
-    # Inizializzazione variabili
-    em_materiali, em_rifiuti, em_trasporti, em_energia, em_acqua, em_macchinari = 0, 0, 0, 0, 0, 0
-    q_rifiuti = 0
-    fe_trasporti_medio = 0
-    
-    # MATERIALI E RIFIUTI
-    st.markdown("---")
-    st.markdown("#### Materiali e Rifiuti")
-    st.markdown("Le emissioni dei materiali vengono calcolate dalla fase di estrazione della materia prima fino alla creazione del prodotto finale (A1-A3). I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
-    st.markdown("Le emissioni dei rifiuti vengono calcolate dalla fase di trasporto in discarica fino allo smaltimento (C2-C4). La quantità di rifiuti viene inserta da utente in % rispetto alla quantità di materiale. I relativi fattori emissivi si trovano nella scheda EPD del prodotto.")
-    
-    if quantita_mat > 0:
-        materiale_scelto = st.selectbox("Seleziona Tipo Materiale (filtro categoria):", df_epd['Materiale'].dropna().unique())
-        df_epd_filtrato = df_epd[df_epd['Materiale'] == materiale_scelto]
-        
-        col_epd_fe = next((c for c in df_epd_filtrato.columns if 'fattore' in str(c).lower()), df_epd_filtrato.columns[3])
-        col_epd_c2 = next((c for c in df_epd_filtrato.columns if 'c2' in str(c).lower()), df_epd_filtrato.columns[4])
-        col_epd_link = next((c for c in df_epd_filtrato.columns if 'epd' in str(c).lower() or 'link' in str(c).lower()), df_epd_filtrato.columns[-1])
-        
-        st.dataframe(
-            df_epd_filtrato[['Materiale', 'Produttore', col_epd_fe, col_epd_c2, col_epd_link]],
-            column_config={col_epd_link: st.column_config.LinkColumn("Link EPD")}, hide_index=True
-        )
-        
-        scelta_specifica = st.selectbox("Scegli il prodotto specifico per il calcolo:", df_epd_filtrato['Produttore'])
-        fattore_em_mat = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica][col_epd_fe].values[0]
-        fattore_em_rif = df_epd_filtrato[df_epd_filtrato['Produttore'] == scelta_specifica][col_epd_c2].values[0]
-        
-        fattore_em_mat = float(str(fattore_em_mat).replace(',', '.'))
-        fattore_em_rif = float(str(fattore_em_rif).replace(',', '.'))
-        
-        em_materiali = quantita_mat * fattore_em_mat
-        
-        perc_rifiuti = st.number_input("% di rifiuti stimata (sfrido):", min_value=0.0, max_value=100.0, value=0.0, key=f"rif_{unique_key}") / 100
-        q_rifiuti = quantita_mat * perc_rifiuti
-        em_rifiuti = q_rifiuti * fattore_em_rif
-        
-        df_sum_mat = pd.DataFrame({
-            "Voce": ["Materiali", "Rifiuti"],
-            "Quantità [kg]": [f"{quantita_mat:,.2f} kg", f"{q_rifiuti:,.2f}"],
-            "Fattore Emissivo [kgCO₂ eq/kg]": [f"{fattore_em_mat:,.4f}", f"{fattore_em_rif:,.4f}"],
-            "Emissioni [kgCO₂ eq]": [f"{em_materiali:,.2f}", f"{em_rifiuti:,.2f}"]
-        })
-        st.markdown("**Riepilogo Materiali e Rifiuti:**")
-        st.dataframe(df_sum_mat, hide_index=True)
-    else:
-        st.info("Nessun materiale in ingresso associato a questa attività. Emissioni per Materiali e Rifiuti pari a 0.")
-        
-    # TRASPORTI MULTIPLI
-    st.markdown("---")
-    st.markdown("#### Trasporti")
-    st.markdown("Trasporto ipotizzato: max 28 t per una distanza di 30 km. L'utente potrà scegliere il tipo di carburante e i relativi fattori emissivi sono presenti nel database LCI del sito.") 
-    st.markdown("In caso di mancanza del materiale associato all'attività analizzata, è comunque possibile calcolare le emissioni dovute al trasporto di materiale da demolizione in discarica.") 
-    st.markdown("FONTE fattori emissivi: EMEP (European Enviroment Agency).") 
-    
-    if 'Trasporti' in df_lci:
-        df_t_sheet = df_lci['Trasporti']
-        
-        df_t_emissions = df_t_sheet.iloc[0:9].copy()
-        df_t_emissions.columns = ['Tipologia', 'Carburante', 'Fattore_Emissione']
-        
-        df_t_consumi = df_t_sheet.iloc[11:21].copy()
-        df_t_consumi.columns = ['Tipologia', 'Carburante', 'Consumo_Medio']
-        df_t_consumi = df_t_consumi.dropna(subset=['Tipologia'])
-        df_t_consumi['Label'] = df_t_consumi['Tipologia'].astype(str) + " - " + df_t_consumi['Carburante'].astype(str)
-        
-        viaggi_mat = np.ceil(quantita_mat / 28000) if quantita_mat > 0 else 0
-        viaggi_rif = np.ceil(q_rifiuti / 28000) if q_rifiuti > 0 else 0
-        viaggi_tot_stimati = int(viaggi_mat + viaggi_rif)
-        
-        default_mezzi = 1 if viaggi_tot_stimati > 0 else 0
-        num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=0, value=default_mezzi, step=1, key=f"num_trasporti_{unique_key}")
-        
-        em_trasporti = 0
-        tot_km_progetto = 0
-        dati_trasporto_tabella = []
-        
-        if num_tipi_trasporto > 0:
-            for i in range(num_tipi_trasporto):
-                st.markdown(f"**Mezzo di Trasporto {i+1}**")
-                scelta_mezzo = st.selectbox(f"Seleziona Veicolo/Carburante {i+1}:", df_t_consumi['Label'].unique(), key=f"t_mezzo_{i}_{unique_key}")
-                row_mezzo = df_t_consumi[df_t_consumi['Label'] == scelta_mezzo].iloc[0]
-                
-                consumo_medio = float(str(row_mezzo['Consumo_Medio']).replace(',', '.'))
-                carb_selezionato = str(row_mezzo['Carburante'])
-                carb_match = 'CNG(or LNG)' if 'CNG' in carb_selezionato else carb_selezionato
-                
-                row_em = df_t_emissions[df_t_emissions['Carburante'].astype(str) == carb_match]
-                fattore_carb = float(str(row_em['Fattore_Emissione'].values[0]).replace(',', '.')) if not row_em.empty else 0.0
-                
-                col_t1, col_t2 = st.columns(2)
-                with col_t1:
-                    viaggi = st.number_input(f"Viaggi stimati (mezzo {i+1}):", min_value=0, value=viaggi_tot_stimati if i==0 else 0, key=f"t_viaggi_{i}_{unique_key}")
-                with col_t2:
-                    distanza = st.number_input(f"Distanza media a viaggio [km] (mezzo {i+1}):", min_value=0.0, value=30.0, key=f"t_dist_{i}_{unique_key}")
-                
-                em_trasporto_i = viaggi * distanza * consumo_medio * fattore_carb
-                em_trasporti += em_trasporto_i
-                tot_km_progetto += (viaggi * distanza)
-                
-                dati_trasporto_tabella.append({
-                    "Mezzo": scelta_mezzo,
-                    "Viaggi": viaggi,
-                    "Distanza [km]": distanza,
-                    "Consumo [kg/km]": consumo_medio,
-                    "Fattore Emissivo [kgCO₂ eq/kg]": fattore_carb,
-                    "Emissioni [kgCO₂ eq]": round(em_trasporto_i, 2)
-                })
-
-            fe_trasporti_medio = (em_trasporti / tot_km_progetto) if tot_km_progetto > 0 else 0
-            
-            st.markdown("**Riepilogo Trasporti:**")
-            st.dataframe(pd.DataFrame(dati_trasporto_tabella), hide_index=True)
-        else:
-            st.info("Nessun mezzo di trasporto previsto per questa attività.")
-            fe_trasporti_medio = 0
-            
-        st.write(f"**Totale Emissioni Trasporti:** {em_trasporti:,.2f} kgCO₂ eq")
-        
-    # MACCHINARI MULTIPLI
-    st.markdown("---")
-    st.markdown("#### Macchinari")
-    st.markdown("Il calcolo delle emissioni dei macchinari si basa sul prodotto analitico tra la potenza nominale del motore, il consumo specifico di combustibile per unità di energia, il fattore di carico medio (tempo effettivo di funzionamento del macchinario nelle 8 ore lavorative), le ore lavorative giornaliere di un turno standard pari a 8 ore e il fattore emissivo del carburante.")
-    col_mac_fe = next((c for c in df_macc.columns if 'giorno' in str(c).lower()), df_macc.columns[3] if len(df_macc.columns) > 3 else None)
-    col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
-    durata_giorni = int(row_att[col_durata]) if col_durata else 1
-    
-    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1, key=f"num_macc_{unique_key}")
-    
-    em_macchinari = 0
-    dati_macchinari_tabella = []
-    
-    if num_tipi_macc > 0:
-        for i in range(num_tipi_macc):
-            st.markdown(f"**Macchinario {i+1}**")
-            macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{i}_{unique_key}")
-            df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
-            
-            if col_mac_fe:
-                col_macc_link = next((c for c in df_macc_filt.columns if 'link' in str(c).lower()), df_macc_filt.columns[-1])
-                st.dataframe(
-                    df_macc_filt[['Macchinario', 'Produttore', col_mac_fe, col_macc_link]],
-                    column_config={col_macc_link: st.column_config.LinkColumn("Link Schede Tecniche")},
-                    hide_index=True
-                )
-                
-                macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}_{unique_key}")
-                fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore][col_mac_fe].values[0]).replace(',', '.'))
-            else:
-                st.warning("Impossibile trovare la colonna delle emissioni nel file macchinari.")
-                fe_macc_8h = 0.0
-                macc_produttore = "N/A"
-                
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                num_macc_input = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{i}_{unique_key}")
-            with col_m2:
-                giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{i}_{unique_key}")
-                
-            em_macc_i = fe_macc_8h * num_macc_input * giorni_macc
-            em_macchinari += em_macc_i
-            
-            dati_macchinari_tabella.append({
-                "Voce": f"Macchinario {i+1}",
-                "Num. Macchine": num_macc_input,
-                "Giorni": giorni_macc,
-                "Fattore Emissivo [kgCO₂ eq/giorno]": f"{fe_macc_8h:,.2f}",
-                "Emissioni [kgCO₂ eq]": f"{em_macc_i:,.2f}"
-            })
-            
-        st.markdown("**Riepilogo Macchinari:**")
-        st.dataframe(pd.DataFrame(dati_macchinari_tabella), hide_index=True)
-    else:
-        st.info("Nessun macchinario previsto per questa attività.")
-        
-    st.write(f"**Totale Emissioni Macchinari:** {em_macchinari:,.2f} kgCO₂ eq")
-    
-    # ENERGIA
-    st.markdown("---")
-    st.markdown("#### Energia Elettrica")
-    st.markdown("Il calcolo delle emissioni per l'energia elettrica si basa sul prodotto tra il consumo effettivo in kilowattora (kWh) e il fattore emissivo specifico della tecnologia di generazione selezionata.")
-    st.markdown("FONTE fattori emissivi: ISPRA (Istituto Superiore per la Protezione e la Ricerca Ambientale).")
-    col_energia_fe = next((c for c in df_lci['Energia'].columns if 'fattore' in str(c).lower()), df_lci['Energia'].columns[1])
-    col_energia_nome = df_lci['Energia'].columns[0]
-    
-    tech_energia = st.selectbox("Tecnologia generazione elettrica:", df_lci['Energia'][col_energia_nome].unique(), key=f"tech_ene_{unique_key}")
-    fe_energia = float(str(df_lci['Energia'][df_lci['Energia'][col_energia_nome] == tech_energia][col_energia_fe].values[0]).replace(',', '.'))
-    kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0, key=f"kwh_{unique_key}")
-    em_energia = kwh_stimati * fe_energia
-    
-    df_sum_ene = pd.DataFrame({
-        "Voce": ["Energia"],
-        "Consumo Totale [kWh]": [f"{kwh_stimati}"],
-        "Fattore Emissivo [kgCO₂ eq/kWh]": [f"{fe_energia:,.4f}"],
-        "Emissioni [kgCO₂ eq]": [f"{em_energia:,.2f}"]
-    })
-    st.markdown("**Riepilogo Energia:**")
-    st.dataframe(df_sum_ene, hide_index=True)
-    
-    # ACQUA
-    st.markdown("---")
-    st.markdown("#### Acqua")
-    st.markdown("Il calcolo moltiplica il volume consumato in litri per il fattore emissivo associato alla specifica tipologia di approvvigionamento o trattamento idrico.")
-    st.markdown("FONTE fattori emissivi: GHG (GreenHouse Gas emissions).")
-    col_acqua_fe = next((c for c in df_lci['Acqua'].columns if 'fattore' in str(c).lower()), df_lci['Acqua'].columns[1])
-    col_acqua_nome = df_lci['Acqua'].columns[0]
-    
-    tech_acqua = st.selectbox("Approvvigionamento/Trattamento Acqua:", df_lci['Acqua'][col_acqua_nome].unique(), key=f"tech_acq_{unique_key}")
-    fe_acqua = float(str(df_lci['Acqua'][df_lci['Acqua'][col_acqua_nome] == tech_acqua][col_acqua_fe].values[0]).replace(',', '.'))
-    litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0, key=f"litri_{unique_key}")
-    em_acqua = litri_stimati * fe_acqua
-    
-    df_sum_acq = pd.DataFrame({
-        "Voce": ["Acqua"],
-        "Consumo Totale [l]": [f"{litri_stimati}"],
-        "Fattore Emissivo [kgCO₂ eq/l]": [f"{fe_acqua:,.4f}"],
-        "Emissioni [kgCO₂ eq]": [f"{em_acqua:,.2f}"]
-    })
-    st.markdown("**Riepilogo Acqua:**")
-    st.dataframe(df_sum_acq, hide_index=True)
-    
-    st.markdown("---")
-    if st.button("Salva (o Sovrascrivi) Calcolo per questa Attività", use_container_width=True):
-        totale_eq = em_materiali + em_rifiuti + em_macchinari + em_trasporti + em_energia + em_acqua
-        
-        record = {
-            "Attività": row_att['Label_Attivita'],
-            "ID": id_att, "Nome": nome_att, "Struttura": nome_strutt, "WBS_L": wbs_lav, "WBS_M": wbs_mat,
-            "Durata": durata_giorni, 
-            "Data Inizio": row_att['Data_Inizio_Calc'].date(), 
-            "Data Fine": row_att['Data_Fine_Calc'].date(),
-            "Materiali [kgCO₂ eq]": em_materiali, "Rifiuti [kgCO₂ eq]": em_rifiuti, 
-            "Macchinari [kgCO₂ eq]": em_macchinari, "Trasporti [kgCO₂ eq]": em_trasporti,
-            "Energia [kgCO₂ eq]": em_energia, "Acqua [kgCO₂ eq]": em_acqua, 
-            "Totale [kgCO₂ eq]": totale_eq
-        }
-        
-        st.session_state.configurazioni_salvate[row_att['Label_Attivita']] = {
-            "Carburante": "Mix" if 'Trasporti' in df_lci else None,
-            "Consumo_mezzo": 1.0 if 'Trasporti' in df_lci else 0,
-            "FE_Trasporti": fe_trasporti_medio if 'Trasporti' in df_lci else 0,
-            "Energia": tech_energia, "FE_Energia": fe_energia,
-            "Acqua": tech_acqua, "FE_Acqua": fe_acqua
-        }
-        
-        lista_ris = [r for r in st.session_state.risultati_progettazione if r['Attività'] != row_att['Label_Attivita']]
-        lista_ris.append(record)
-        st.session_state.risultati_progettazione = sorted(lista_ris, key=lambda x: x['Data Inizio'])
-        st.success("Attività salvata/sovrascritta con successo! Scorri in basso per i risultati aggiornati.")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# --- SEZIONE 3: RISULTATI E GRAFICI PROGETTAZIONE ---
-if st.session_state.risultati_progettazione:
-    st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-    st.subheader("3. Risultati Fase di Progettazione")
-    
-    df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
-    st.dataframe(df_risultati, use_container_width=True)
-    
-    # PULSANTE DI ESPORTAZIONE
-    csv_export = df_risultati.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label="Scarica analisi in formato CSV",
-        data=csv_export,
-        file_name="risultati_analisi_cantiere.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
-    
-    # SPLIT TOTALI PROGETTAZIONE
-    "gwp_totale =Ho corretto il problema del tooltip vuoto: ora, in fase di fusione (merge) dei dati tra progettazione e cantiere (i sensori non hanno il nome dell'attività, ma solo l'ID), la logica recupera il nome corretto dal file di progetto. Ho anche modificato il colore dei dati reali dei trasporti in un grigio scuro (`#707070`)."
-
-Ecco il codice aggiornato (ho modificato la sezione 4 per gestire l'estrazione e l'aggiornamento corretto della colonna "Attività" e aggiornato il colore dei trasporti in `plot_comparison`):
-
-```python
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import timedelta
-import numpy as np
-import os
-import io
-
-# --- IMPOSTAZIONI PAGINA E STILE CSS ---
-st.set_page_config(page_title="EcoSite Tracker", layout="wide")
-st.markdown("""
-<style>
-    @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap)');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; background-color: #faf9f6; }
-    .minimal-card { background-color: #ffffff !important; border: 1.5px solid #d5ddd1 !important; border-radius: 8px !important; padding: 32px !important; margin-bottom: 24px !important; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.01) !important; }
-</style>
-""", unsafe_allow_html=True)
-
-st.title("EcoSite Tracker")
-st.markdown("Monitoraggio Emissioni CO₂ in fase operativa. Confronto tra i dati stimati in fase di Progettazione con i dati reali di cantiere misurati tramite sensoristica.")
-            
-# --- INIZIALIZZAZIONE SESSION STATE ---
-if 'risultati_progettazione' not in st.session_state:
-    st.session_state.risultati_progettazione = []
-if 'configurazioni_salvate' not in st.session_state:
-    st.session_state.configurazioni_salvate = {}
-if 'df_comp_cantiere' not in st.session_state:
-    st.session_state.df_comp_cantiere = None
-if 'loaded_file_name' not in st.session_state:
-    st.session_state.loaded_file_name = None
-
-# COLORI GRAFICI (Allineati alla foto fornita)
-colori_parametri = {
-    'Materiali': "#D2042D", 
-    'Rifiuti': "#93C572", 
-    'Trasporti': "#D1D0CE", 
-    'Energia': "#FFD700",
-    'Acqua': "#0369a1", 
-    'Macchinari': "#0ABAB5"
-}
-
-# --- FUNZIONI DI CARICAMENTO DATI STATICI ---
-def load_static_data():
-    df_epd, df_lci, df_macc = None, None, None
-    err = ""
-    try:
-        if os.path.exists("EPD materiali.xlsx"):
-            df_epd = pd.read_excel("EPD materiali.xlsx")
-        elif os.path.exists("epd_materiali.csv"):
-            df_epd = pd.read_csv("epd_materiali.csv", sep=None, engine='python', encoding='latin1')
-        else:
-            err += "Manca il database EPD (EPD materiali.xlsx). "
-            
-        if os.path.exists("LCI.xlsx"):
-            df_lci = pd.read_excel("LCI.xlsx", sheet_name=None)
-            for k in df_lci.keys():
-                df_lci[k].columns = df_lci[k].columns.astype(str).str.strip()
-        else:
-            err += "Manca il database LCI.xlsx. "
-            
-        if os.path.exists("macchinari.xlsx"):
-            df_macc = pd.read_excel("macchinari.xlsx")
-        else:
-            err += "Manca il database macchinari.xlsx. "
-            
-    except Exception as e:
-        err += f"Errore interno di lettura database: {e}"
-        
-    return df_epd, df_lci, df_macc, err
-
-df_epd, df_lci, df_macc, err_msg = load_static_data()
-if err_msg:
-    st.error(f"⚠️ {err_msg}")
-
-# --- SEZIONE 1: CARICAMENTO DATI UTENTE ---
-st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-st.subheader("1. Caricamento File di Progetto")
-
-# RIQUADRO INFORMATIVO 1
-st.markdown("""
-<div style='background-color: #eef2f3; padding: 15px; border-left: 5px solid #2980b9; border-radius: 4px; margin-bottom: 20px;'>
-    <strong>Istruzioni di Formattazione CSV (Fase di Progetto):</strong>
-    <ul style='margin-top: 5px; margin-bottom: 0px;'>
-        <li><strong>Nuova Analisi (Cronoprogramma e Abachi):</strong> I file devono essere <code>.csv</code>. Il Cronoprogramma deve includere: <em>ID attività, Nome, Struttura, WBS Lavorazione, WBS Materiale, Data d'inizio, Data di fine</em>. Gli abachi devono includere la colonna <em>Massa, Peso o Quantità</em>.</li>
-        <li><strong>Analisi Precedente:</strong> Carica il file riassuntivo esportato in precedenza in formato <code>.csv</code>, scaricabile nella sezione "3.Risultati Fase di Progettazione", per visualizzare subito i risultati e i grafici. Potrai comunque selezionare le attività per ricalcolarne i valori e sovrascrivere i risultati inserendo nuovamente il cronoprogramma e gli abachi dei materiali.</li>
-    </ul>
-</div>
-""", unsafe_allow_html=True)
-
-col_up1, col_up2 = st.columns(2)
-with col_up1:
-    file_caricati = st.file_uploader("Carica Cronoprogramma e Quantità (CSV)", type=['csv'], accept_multiple_files=True)
-with col_up2:
-    file_precedente = st.file_uploader("Carica un'Analisi Precedente (CSV)", type=['csv'])
-
-lista_quantita = []
-df_crono = None
-
-# GESTIONE CARICAMENTO ANALISI PRECEDENTE
-if file_precedente:
-    if st.session_state.loaded_file_name != file_precedente.name:
-        try:
-            df_prec = pd.read_csv(file_precedente, sep=None, engine='python')
-            if 'Attività' in df_prec.columns and 'Data Inizio' in df_prec.columns:
-                df_prec['Data Inizio'] = pd.to_datetime(df_prec['Data Inizio'], errors='coerce').dt.date
-                df_prec['Data Fine'] = pd.to_datetime(df_prec['Data Fine'], errors='coerce').dt.date
-                
-                st.session_state.risultati_progettazione = df_prec.to_dict('records')
-                st.session_state.loaded_file_name = file_precedente.name
-                
-        except Exception as e:
-            st.error(f"Errore nella lettura dell'analisi precedente: {e}")
-
-# GESTIONE CARICAMENTO FILE DI PROGETTO (CRONO + QUANTITÀ)
-if file_caricati:
-    for f in file_caricati:
-        try:
-            content = f.getvalue().decode('utf-8-sig', errors='ignore')
-            lines = content.splitlines()
-            
-            header_idx = 0
-            for i, line in enumerate(lines):
-                if any(k in line.lower() for k in ['wbs', 'inizio', 'massa', 'attività', 'durata']):
-                    header_idx = i
-                    break
-                    
-            csv_data = "\n".join(lines[header_idx:])
-            
-            df_temp = pd.read_csv(io.StringIO(csv_data), sep=';')
-            if len(df_temp.columns) < 2:
-                df_temp = pd.read_csv(io.StringIO(csv_data), sep=',')
-            
-            df_temp.columns = df_temp.columns.str.strip()
-            col_lower = [str(c).lower() for c in df_temp.columns]
-            
-            if any('inizio' in c or 'fine' in c or 'durata' in c for c in col_lower):
-                df_crono = df_temp
-            else:
-                lista_quantita.append(df_temp)
-                
-        except Exception as e:
-            st.error(f"Errore nella lettura del file {f.name}: {e}")
-
-df_quantita = pd.concat(lista_quantita, ignore_index=True) if lista_quantita else None
-
-# COSTRUZIONE/ELABORAZIONE CRONOPROGRAMMA
-if df_crono is not None:
-    col_inizio = next((c for c in df_crono.columns if 'inizio' in str(c).lower()), None)
-    col_fine = next((c for c in df_crono.columns if 'fine' in str(c).lower()), None)
-    
-    if col_inizio and col_fine:
-        df_crono['Data_Inizio_Calc'] = pd.to_datetime(df_crono[col_inizio], dayfirst=True, errors='coerce')
-        df_crono['Data_Fine_Calc'] = pd.to_datetime(df_crono[col_fine], dayfirst=True, errors='coerce')
-        df_crono = df_crono.dropna(subset=['Data_Inizio_Calc', 'Data_Fine_Calc']).sort_values(by='Data_Inizio_Calc')
-        
-        if len(df_crono) > 0:
-            col_id = next((c for c in df_crono.columns if 'id' in str(c).lower()), df_crono.columns[0])
-            col_struttura = next((c for c in df_crono.columns if 'struttura' in str(c).lower()), None)
-            col_wbs = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), None)
-            col_nome = next((c for c in df_crono.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_crono.columns[1])
-   
-            etichette = df_crono[col_id].astype(str) + " - " + df_crono[col_nome].astype(str)
-            if col_struttura: etichette += " | " + df_crono[col_struttura].astype(str)
-            
-            df_crono['Label_Attivita'] = etichette
-            
-            if df_quantita is not None:
-                st.success(f"Cronoprogramma caricato e {len(lista_quantita)} file dei materiali uniti con successo!")
-            else:
-                st.warning("Cronoprogramma caricato, ma non sono stati rilevati file delle quantità dei materiali.")
-        else:
-            st.error("Il cronoprogramma è stato letto, ma nessuna data era in un formato valido.")
-            df_crono = None
-    else:
-        st.error("Impossibile trovare le colonne delle date nel cronoprogramma.")
-elif file_precedente and 'risultati_progettazione' in st.session_state and st.session_state.risultati_progettazione:
-    df_prec = pd.DataFrame(st.session_state.risultati_progettazione)
-    df_crono = pd.DataFrame({
-        'ID': df_prec['ID'] if 'ID' in df_prec.columns else df_prec.index,
-        'Nome': df_prec['Nome'] if 'Nome' in df_prec.columns else df_prec['Attività'],
-        'Struttura': df_prec['Struttura'] if 'Struttura' in df_prec.columns else '',
-        'WBS Lav': df_prec['WBS_L'] if 'WBS_L' in df_prec.columns else '',
-        'WBS Materiale': df_prec['WBS_M'] if 'WBS_M' in df_prec.columns else '',
-        'Data_Inizio_Calc': pd.to_datetime(df_prec['Data Inizio']),
-        'Data_Fine_Calc': pd.to_datetime(df_prec['Data Fine']),
-        'Durata': df_prec['Durata'] if 'Durata' in df_prec.columns else 1,
-        'Label_Attivita': df_prec['Attività']
-    })
-    st.success(f"Dati dell'analisi precedente ripristinati! Trovate {len(df_prec)} attività per visualizzazione o ricalcolo.")
-else:
-    st.info("Carica i file CSV per iniziare o ripristinare un'analisi.")
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-# --- SEZIONE 2: COMPILAZIONE ATTIVITA' ---
-if df_crono is not None and df_epd is not None and df_lci is not None:
-    st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
-    st.subheader("2. Analisi Attività (Fase di Progettazione)")
-    
-    attivita_selezionata = st.selectbox("Scegli la lavorazione dal cronoprogramma (per calcolo o ricalcolo):", df_crono['Label_Attivita'].tolist())
-    
-    row_att = df_crono[df_crono['Label_Attivita'] == attivita_selezionata].iloc[0]
-    
-    col_id = next((c for c in df_crono.columns if 'id' in str(c).lower()), df_crono.columns[0])
-    col_nome = next((c for c in df_crono.columns if c.strip().lower() in ['nome', 'name', 'nome attività', 'attività']), df_crono.columns[1])
-    col_struttura = next((c for c in df_crono.columns if 'struttura' in str(c).lower()), None)
-    col_wbs_lav = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), None)
-    
     id_att = str(row_att[col_id]) # Castato a stringa per usarlo in modo sicuro per il salvataggio
     nome_att = row_att[col_nome]
     nome_strutt = row_att[col_struttura] if col_struttura else ""
@@ -851,7 +319,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         df_t_emissions = df_t_sheet.iloc[0:9].copy()
         df_t_emissions.columns = ['Tipologia', 'Carburante', 'Fattore_Emissione']
         
-        df_t_consumi = df_t_sheet.iloc.copy()
+        df_t_consumi = df_t_sheet.iloc[11:21].copy()
         df_t_consumi.columns = ['Tipologia', 'Carburante', 'Consumo_Medio']
         df_t_consumi = df_t_consumi.dropna(subset=['Tipologia'])
         df_t_consumi['Label'] = df_t_consumi['Tipologia'].astype(str) + " - " + df_t_consumi['Carburante'].astype(str)
@@ -1260,7 +728,7 @@ if st.session_state.risultati_progettazione:
             id_sensore = str(row[col_id]).strip()
             data_sensore = row[col_data].date()
             
-            # Cerca l'ID nel database di progetto per recuperare l'etichetta dell'attività
+            # Cerca l'ID nel database di progetto
             match_prog = df_ris[df_ris['ID'].astype(str).str.strip() == id_sensore]
             if match_prog.empty:
                 continue 
@@ -1277,7 +745,7 @@ if st.session_state.risultati_progettazione:
                 carb = str(row[col_carb]) if col_carb else ''
                 
                 df_t_fe = df_lci['Trasporti'].iloc[0:9]
-                df_t_cons = df_lci['Trasporti'].iloc
+                df_t_cons = df_lci['Trasporti'].iloc[11:21]
                 
                 match_fe = df_t_fe[df_t_fe.iloc[:, 1].astype(str).str.contains(carb, case=False, na=False)]
                 fe = float(match_fe.iloc[0, 2]) if not match_fe.empty else 0.0
@@ -1286,7 +754,7 @@ if st.session_state.risultati_progettazione:
                 consumo = pd.to_numeric(match_cons.iloc[:, 2], errors='coerce').mean() if not match_cons.empty else 0.1
                 
                 emissione = km * consumo * fe
-                risultati.append({'Data': data_sensore, 'Attività': label_attivita, 'Trasporti_Cant': emissione})
+                risultati.append({'Data': data_sensore, 'Trasporti_Cant': emissione})
                 
             elif tipo_file == 'energia':
                 col_q = next((c for c in df_sens.columns if 'consum' in str(c).lower() or 'kwh' in str(c).lower()), None)
@@ -1300,7 +768,7 @@ if st.session_state.risultati_progettazione:
                 fe = float(match_fe.iloc[0, 1]) if not match_fe.empty else conf.get('FE_Energia', 0)
                 
                 emissione = kwh * fe
-                risultati.append({'Data': data_sensore, 'Attività': label_attivita, 'Energia_Cant': emissione})
+                risultati.append({'Data': data_sensore, 'Energia_Cant': emissione})
                 
             elif tipo_file == 'acqua':
                 col_q = next((c for c in df_sens.columns if 'consum' in str(c).lower() or 'litr' in str(c).lower() or 'l' == str(c).lower()[-1:]), None)
@@ -1314,48 +782,30 @@ if st.session_state.risultati_progettazione:
                 fe = float(match_fe.iloc[0, 1]) if not match_fe.empty else conf.get('FE_Acqua', 0)
                 
                 emissione = litri * fe
-                risultati.append({'Data': data_sensore, 'Attività': label_attivita, 'Acqua_Cant': emissione})
+                risultati.append({'Data': data_sensore, 'Acqua_Cant': emissione})
                 
         if risultati:
             # Aggrego giornalmente i dati misurati
-            df_ris_grouped = pd.DataFrame(risultati)
-            agg_dict = {}
-            if 'Trasporti_Cant' in df_ris_grouped.columns: agg_dict['Trasporti_Cant'] = 'sum'
-            if 'Energia_Cant' in df_ris_grouped.columns: agg_dict['Energia_Cant'] = 'sum'
-            if 'Acqua_Cant' in df_ris_grouped.columns: agg_dict['Acqua_Cant'] = 'sum'
-            agg_dict['Attività'] = lambda x: ' | '.join(sorted(set(x)))
-            return df_ris_grouped.groupby('Data').agg(agg_dict).reset_index()
-            
+            return pd.DataFrame(risultati).groupby('Data').sum().reset_index()
         return pd.DataFrame(columns=['Data'])
     
     # SALVO I DATI IN SESSION_STATE IN MODO CHE NON SPARISCANO AI SUCCESSIVI RERUN
     if st.button("Elabora Dati Sensori e Genera Grafici di Confronto", use_container_width=True):
         df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
         
-        # 1. TIMELINE PROGETTUALE (Stime spalmate sui giorni di lavoro con associazione dell'Attività)
+        # 1. TIMELINE PROGETTUALE (Stime spalmate sui giorni di lavoro)
         dati_prog = []
         for _, row in df_risultati.iterrows():
             giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
             n_g = len(giorni_lavoro) if len(giorni_lavoro) > 0 else 1
             for g in giorni_lavoro:
                 dati_prog.append({
-                    'Data': g.date(), 'Attività_Prog': row['Attività'], 'Materiali': row["Materiali [kgCO₂ eq]"]/n_g, 
-                    'Rifiuti': row["Rifiuti [kgCO₂ eq]"]/n_g, 'Macchinari': row["Macchinari [kgCO₂ eq]"]/n_g, 
-                    'Trasporti_Prog': row["Trasporti [kgCO₂ eq]"]/n_g, 'Energia_Prog': row["Energia [kgCO₂ eq]"]/n_g, 
-                    'Acqua_Prog': row["Acqua [kgCO₂ eq]"]/n_g
+                    'Data': g.date(), 'Materiali': row["Materiali [kgCO₂ eq]"]/n_g, 'Rifiuti': row["Rifiuti [kgCO₂ eq]"]/n_g,
+                    'Macchinari': row["Macchinari [kgCO₂ eq]"]/n_g, 'Trasporti_Prog': row["Trasporti [kgCO₂ eq]"]/n_g,
+                    'Energia_Prog': row["Energia [kgCO₂ eq]"]/n_g, 'Acqua_Prog': row["Acqua [kgCO₂ eq]"]/n_g
                 })
         
-        if dati_prog:
-            df_comp_prog = pd.DataFrame(dati_prog)
-            agg_dict = {
-                'Materiali': 'sum', 'Rifiuti': 'sum', 'Macchinari': 'sum', 
-                'Trasporti_Prog': 'sum', 'Energia_Prog': 'sum', 'Acqua_Prog': 'sum'
-            }
-            # Unisce i nomi delle attività svolte in quella specifica giornata per mantenerle nel Tooltip
-            agg_dict['Attività_Prog'] = lambda x: ' | '.join(sorted(set(x)))
-            df_comp = df_comp_prog.groupby('Data').agg(agg_dict).reset_index()
-        else:
-            df_comp = pd.DataFrame(columns=['Data', 'Attività_Prog'])
+        df_comp = pd.DataFrame(dati_prog).groupby('Data').sum().reset_index() if dati_prog else pd.DataFrame(columns=['Data'])
         
         # 2. LETTURA SENSORI CANTIERE
         df_cant_t, df_cant_e, df_cant_a = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -1363,24 +813,11 @@ if st.session_state.risultati_progettazione:
         if file_energia: df_cant_e = elabora_sensore_con_attivita(pd.read_csv(file_energia), 'energia', df_lci, df_risultati, st.session_state.configurazioni_salvate)
         if file_acqua: df_cant_a = elabora_sensore_con_attivita(pd.read_csv(file_acqua), 'acqua', df_lci, df_risultati, st.session_state.configurazioni_salvate)
         
-        # Rinomino le colonne delle attività del cantiere
-        if not df_cant_t.empty: df_cant_t = df_cant_t.rename(columns={'Attività': 'Attività_Cant_T'})
-        if not df_cant_e.empty: df_cant_e = df_cant_e.rename(columns={'Attività': 'Attività_Cant_E'})
-        if not df_cant_a.empty: df_cant_a = df_cant_a.rename(columns={'Attività': 'Attività_Cant_A'})
-
         # 3. MERGE DATI (Join Outer sulle Date)
         df_sensors = pd.DataFrame(columns=['Data'])
         if not df_cant_t.empty: df_sensors = pd.merge(df_sensors, df_cant_t, on='Data', how='outer')
         if not df_cant_e.empty: df_sensors = pd.merge(df_sensors, df_cant_e, on='Data', how='outer')
         if not df_cant_a.empty: df_sensors = pd.merge(df_sensors, df_cant_a, on='Data', how='outer')
-        
-        # Unisco le attività del cantiere in un'unica colonna
-        cols_cant_att = [c for c in ['Attività_Cant_T', 'Attività_Cant_E', 'Attività_Cant_A'] if c in df_sensors.columns]
-        if cols_cant_att:
-            df_sensors['Attività_Cant'] = df_sensors[cols_cant_att].fillna('').apply(lambda x: ' | '.join(filter(None, x)), axis=1)
-            # Rimuovo i duplicati nella stringa combinata
-            df_sensors['Attività_Cant'] = df_sensors['Attività_Cant'].apply(lambda x: ' | '.join(sorted(set(item.strip() for item in x.split(' | ') if item.strip()))))
-            df_sensors = df_sensors.drop(columns=cols_cant_att)
         
         if not df_comp.empty and not df_sensors.empty:
             df_comp = pd.merge(df_comp, df_sensors, on='Data', how='outer').fillna(0)
@@ -1389,13 +826,6 @@ if st.session_state.risultati_progettazione:
             
         for col in ['Trasporti_Cant', 'Energia_Cant', 'Acqua_Cant', 'Materiali', 'Rifiuti', 'Macchinari', 'Trasporti_Prog', 'Energia_Prog', 'Acqua_Prog']:
             if col not in df_comp: df_comp[col] = 0
-            
-        # Combino le attività di progetto e cantiere per il tooltip finale
-        if 'Attività_Prog' not in df_comp: df_comp['Attività_Prog'] = ""
-        if 'Attività_Cant' not in df_comp: df_comp['Attività_Cant'] = ""
-        
-        df_comp['Attività'] = df_comp[['Attività_Prog', 'Attività_Cant']].astype(str).replace('0', '').apply(lambda x: ' | '.join(filter(None, x)), axis=1)
-        df_comp['Attività'] = df_comp['Attività'].apply(lambda x: ' | '.join(sorted(set(item.strip() for item in x.split(' | ') if item.strip()))))
             
         df_comp['Totale_Prog'] = df_comp['Materiali'] + df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Prog'] + df_comp['Energia_Prog'] + df_comp['Acqua_Prog']
         df_comp['Totale_Cant'] = df_comp['Materiali'] + df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Cant'] + df_comp['Energia_Cant'] + df_comp['Acqua_Cant']
@@ -1473,37 +903,15 @@ if st.session_state.risultati_progettazione:
             ''', unsafe_allow_html=True)
             # --- FINE RIQUADRO ---
 
-            cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana', 'Attività', 'Attività_Prog', 'Attività_Cant']]
-            agg_dict_weekly = {c: 'sum' for c in cols_to_sum}
-            
-            # Aggrego anche l'Attività rimuovendo duplicati nella singola settimana
-            if 'Attività' in df_comp_filtered.columns:
-                agg_dict_weekly['Attività'] = lambda x: '<br>'.join(sorted(set([item.strip() for sublist in x.dropna() if sublist for item in sublist.split(' | ')])))
-
-            df_weekly = df_comp_filtered.groupby('Settimana').agg(agg_dict_weekly).reset_index()
+            cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana']]
+            df_weekly = df_comp_filtered.groupby('Settimana')[cols_to_sum].sum().reset_index()
             
             # --- GRAFICI DI CONFRONTO SETTIMANALI ---
             def plot_comparison(df, base_col, title, c_prog, c_cant):
                 fig = go.Figure()
-                custom_data = df['Attività'] if 'Attività' in df.columns else [''] * len(df)
-                
                 if f"{base_col}_Prog" in df: 
-                    fig.add_trace(go.Bar(
-                        x=df['Settimana'], 
-                        y=df[f'{base_col}_Prog'], 
-                        name='Dati stimati', 
-                        marker_color=c_prog,
-                        customdata=custom_data,
-                        hovertemplate="%{y:,.2f} kgCO₂ eq<br><b>Attività del periodo:</b><br>%{customdata}<extra></extra>"
-                    ))
-                fig.add_trace(go.Bar(
-                    x=df['Settimana'], 
-                    y=df[f'{base_col}_Cant'], 
-                    name='Dati reali', 
-                    marker_color=c_cant,
-                    customdata=custom_data,
-                    hovertemplate="%{y:,.2f} kgCO₂ eq<br><b>Attività del periodo:</b><br>%{customdata}<extra></extra>"
-                ))
+                    fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Prog'], name='Dati stimati', marker_color=c_prog))
+                fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Cant'], name='Dati reali', marker_color=c_cant))
                 
                 if opzione_linee in ["Media Costante", "Entrambe"]:
                     if f"{base_col}_Prog" in df: 
@@ -1525,8 +933,7 @@ if st.session_state.risultati_progettazione:
                 st.plotly_chart(plot_comparison(df_weekly, 'Altri', "GWP Altri Processi: Progetto vs Reale", "#01796F", "#8CD6C4"), use_container_width=True)
             
             col_g1, col_g2 = st.columns(2)
-            # Modificato il colore dei Trasporti Cant a grigio scuro (#707070) 
-            col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#D1D0CE", "#707070"), use_container_width=True)
+            col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Acqua', "Acqua", "#0369a1", "#b8edea"), use_container_width=True)
             col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#FFD700", "#a16207"), use_container_width=True)
             
