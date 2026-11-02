@@ -90,9 +90,9 @@ st.markdown("""
 
 col_up1, col_up2 = st.columns(2)
 with col_up1:
-    file_caricati = st.file_uploader("Opzione A: Carica Cronoprogramma e Quantità (CSV)", type=['csv'], accept_multiple_files=True)
+    file_caricati = st.file_uploader("Carica Cronoprogramma e Quantità (CSV)", type=['csv'], accept_multiple_files=True)
 with col_up2:
-    file_precedente = st.file_uploader("Opzione B: Carica un'Analisi Precedente (CSV)", type=['csv'])
+    file_precedente = st.file_uploader("Carica un'Analisi Precedente (CSV)", type=['csv'])
 
 lista_quantita = []
 df_crono = None
