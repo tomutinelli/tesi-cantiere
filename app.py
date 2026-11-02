@@ -83,7 +83,7 @@ st.markdown("""
     <strong>Istruzioni di Formattazione CSV (Fase di Progetto):</strong>
     <ul style='margin-top: 5px; margin-bottom: 0px;'>
         <li><strong>Nuova Analisi (Cronoprogramma e Abachi):</strong> I file devono essere <code>.csv</code>. Il Cronoprogramma deve includere: <em>ID attività, Nome, Struttura, WBS Lavorazione, WBS Materiale, Data d'inizio, Data di fine</em>. Gli abachi devono includere la colonna <em>Massa, Peso o Quantità</em>.</li>
-        <li><strong>Ripristino Analisi Precedente (NOVITÀ):</strong> Carica il file riassuntivo esportato in precedenza (es. <code>2026-10-24T12-23_export.csv</code>) per visualizzare subito i risultati e i grafici. Potrai comunque selezionare le attività per ricalcolarne i valori e sovrascrivere i risultati.</li>
+        <li><strong>Ripristino Analisi Precedente:</strong> Carica il file riassuntivo esportato in precedenza in formato <code>.csv</code>, scaricabile nella sezione "3.Risultati Fase di Progettazione", per visualizzare subito i risultati e i grafici. Potrai comunque selezionare le attività per ricalcolarne i valori e sovrascrivere i risultati inserendo nuovamente il cronoprogramma e gli abachi dei materiali.</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
