@@ -525,7 +525,7 @@ if st.session_state.risultati_progettazione:
     )
     
     # SPLIT TOTALI PROGETTAZIONE
-    gwp_totale =Ho corretto il problema del tooltip vuoto: ora, in fase di fusione (merge) dei dati tra progettazione e cantiere (i sensori non hanno il nome dell'attività, ma solo l'ID), la logica recupera il nome corretto dal file di progetto. Ho anche modificato il colore dei dati reali dei trasporti in un grigio scuro (`#707070`).
+    "gwp_totale =Ho corretto il problema del tooltip vuoto: ora, in fase di fusione (merge) dei dati tra progettazione e cantiere (i sensori non hanno il nome dell'attività, ma solo l'ID), la logica recupera il nome corretto dal file di progetto. Ho anche modificato il colore dei dati reali dei trasporti in un grigio scuro (`#707070`)."
 
 Ecco il codice aggiornato (ho modificato la sezione 4 per gestire l'estrazione e l'aggiornamento corretto della colonna "Attività" e aggiornato il colore dei trasporti in `plot_comparison`):
 
