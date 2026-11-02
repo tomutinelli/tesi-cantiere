@@ -77,7 +77,7 @@ if err_msg:
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("1. Caricamento File di Progetto")
 
-# RIQUADRO INFORMATIVO 1 (Aggiornato per includere la nuova funzione)
+# RIQUADRO INFORMATIVO 1
 st.markdown("""
 <div style='background-color: #eef2f3; padding: 15px; border-left: 5px solid #2980b9; border-radius: 4px; margin-bottom: 20px;'>
     <strong>Istruzioni di Formattazione CSV (Fase di Progetto):</strong>
@@ -99,7 +99,6 @@ df_crono = None
 
 # GESTIONE CARICAMENTO ANALISI PRECEDENTE
 if file_precedente:
-    # Evita di ricaricare il file se l'utente salva un ricalcolo e la pagina si aggiorna
     if st.session_state.loaded_file_name != file_precedente.name:
         try:
             df_prec = pd.read_csv(file_precedente, sep=None, engine='python')
@@ -107,7 +106,6 @@ if file_precedente:
                 df_prec['Data Inizio'] = pd.to_datetime(df_prec['Data Inizio'], errors='coerce').dt.date
                 df_prec['Data Fine'] = pd.to_datetime(df_prec['Data Fine'], errors='coerce').dt.date
                 
-                # Sostituisce i risultati in sessione
                 st.session_state.risultati_progettazione = df_prec.to_dict('records')
                 st.session_state.loaded_file_name = file_precedente.name
                 
@@ -176,7 +174,6 @@ if df_crono is not None:
             df_crono = None
     else:
         st.error("Impossibile trovare le colonne delle date nel cronoprogramma.")
-# Se non c'è crono caricato, ma è stata caricata l'analisi precedente, ricostruisce il crono fittizio per abilitare i ricalcoli
 elif file_precedente and 'risultati_progettazione' in st.session_state and st.session_state.risultati_progettazione:
     df_prec = pd.DataFrame(st.session_state.risultati_progettazione)
     df_crono = pd.DataFrame({
@@ -210,10 +207,14 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_struttura = next((c for c in df_crono.columns if 'struttura' in str(c).lower()), None)
     col_wbs_lav = next((c for c in df_crono.columns if 'wbs lav' in str(c).lower()), None)
     
-    id_att = str(row_att[col_id]) # Castato a stringa per usarlo in modo sicuro nelle key dei widget
+    id_att = str(row_att[col_id]) # Castato a stringa per usarlo in modo sicuro per il salvataggio
     nome_att = row_att[col_nome]
     nome_strutt = row_att[col_struttura] if col_struttura else ""
     wbs_lav = row_att[col_wbs_lav] if col_wbs_lav else ""
+    
+    # CHIAVE UNIVOCA PER STREAMLIT: Usa l'intera etichetta (ID + Nome + Struttura) 
+    # per forzare il reset dei widget (come il numero di viaggi) quando cambia la struttura.
+    unique_key = str(row_att['Label_Attivita']).replace(" ", "_").replace("-", "_").replace("|", "_")
     
     col_wbs_mat = next((c for c in df_crono.columns if 'wbs materiale' in str(c).lower()), None)
     wbs_mat = row_att[col_wbs_mat] if col_wbs_mat else None
@@ -290,7 +291,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         
         em_materiali = quantita_mat * fattore_em_mat
         
-        perc_rifiuti = st.number_input("% di rifiuti stimata (sfrido):", min_value=0.0, max_value=100.0, value=0.0, key=f"rif_{id_att}") / 100
+        perc_rifiuti = st.number_input("% di rifiuti stimata (sfrido):", min_value=0.0, max_value=100.0, value=0.0, key=f"rif_{unique_key}") / 100
         q_rifiuti = quantita_mat * perc_rifiuti
         em_rifiuti = q_rifiuti * fattore_em_rif
         
@@ -328,7 +329,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         viaggi_tot_stimati = int(viaggi_mat + viaggi_rif)
         
         default_mezzi = 1 if viaggi_tot_stimati > 0 else 0
-        num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=0, value=default_mezzi, step=1, key=f"num_trasporti_{id_att}")
+        num_tipi_trasporto = st.number_input("Quanti tipi di mezzi di trasporto verranno impiegati?", min_value=0, value=default_mezzi, step=1, key=f"num_trasporti_{unique_key}")
         
         em_trasporti = 0
         tot_km_progetto = 0
@@ -337,7 +338,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         if num_tipi_trasporto > 0:
             for i in range(num_tipi_trasporto):
                 st.markdown(f"**Mezzo di Trasporto {i+1}**")
-                scelta_mezzo = st.selectbox(f"Seleziona Veicolo/Carburante {i+1}:", df_t_consumi['Label'].unique(), key=f"t_mezzo_{i}_{id_att}")
+                scelta_mezzo = st.selectbox(f"Seleziona Veicolo/Carburante {i+1}:", df_t_consumi['Label'].unique(), key=f"t_mezzo_{i}_{unique_key}")
                 row_mezzo = df_t_consumi[df_t_consumi['Label'] == scelta_mezzo].iloc[0]
                 
                 consumo_medio = float(str(row_mezzo['Consumo_Medio']).replace(',', '.'))
@@ -349,9 +350,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 
                 col_t1, col_t2 = st.columns(2)
                 with col_t1:
-                    viaggi = st.number_input(f"Viaggi stimati (mezzo {i+1}):", min_value=0, value=viaggi_tot_stimati if i==0 else 0, key=f"t_viaggi_{i}_{id_att}")
+                    viaggi = st.number_input(f"Viaggi stimati (mezzo {i+1}):", min_value=0, value=viaggi_tot_stimati if i==0 else 0, key=f"t_viaggi_{i}_{unique_key}")
                 with col_t2:
-                    distanza = st.number_input(f"Distanza media a viaggio [km] (mezzo {i+1}):", min_value=0.0, value=30.0, key=f"t_dist_{i}_{id_att}")
+                    distanza = st.number_input(f"Distanza media a viaggio [km] (mezzo {i+1}):", min_value=0.0, value=30.0, key=f"t_dist_{i}_{unique_key}")
                 
                 em_trasporto_i = viaggi * distanza * consumo_medio * fattore_carb
                 em_trasporti += em_trasporto_i
@@ -384,7 +385,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
     durata_giorni = int(row_att[col_durata]) if col_durata else 1
     
-    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1, key=f"num_macc_{id_att}")
+    num_tipi_macc = st.number_input("Quanti tipi di macchinari verranno impiegati?", min_value=0, value=0, step=1, key=f"num_macc_{unique_key}")
     
     em_macchinari = 0
     dati_macchinari_tabella = []
@@ -392,7 +393,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     if num_tipi_macc > 0:
         for i in range(num_tipi_macc):
             st.markdown(f"**Macchinario {i+1}**")
-            macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{i}_{id_att}")
+            macchinario = st.selectbox(f"Scegli Macchinario base {i+1}:", df_macc['Macchinario'].unique(), key=f"m_tipo_{i}_{unique_key}")
             df_macc_filt = df_macc[df_macc['Macchinario'] == macchinario]
             
             if col_mac_fe:
@@ -403,7 +404,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                     hide_index=True
                 )
                 
-                macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}_{id_att}")
+                macc_produttore = st.selectbox(f"Modello Specifico {i+1}:", df_macc_filt['Produttore'], key=f"m_prod_{i}_{unique_key}")
                 fe_macc_8h = float(str(df_macc_filt[df_macc_filt['Produttore'] == macc_produttore][col_mac_fe].values[0]).replace(',', '.'))
             else:
                 st.warning("Impossibile trovare la colonna delle emissioni nel file macchinari.")
@@ -412,9 +413,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
                 
             col_m1, col_m2 = st.columns(2)
             with col_m1:
-                num_macc_input = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{i}_{id_att}")
+                num_macc_input = st.number_input(f"Numero di unità (Macchinario {i+1}):", min_value=1, value=1, key=f"m_unita_{i}_{unique_key}")
             with col_m2:
-                giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{i}_{id_att}")
+                giorni_macc = st.number_input(f"Giorni di lavoro (Macchinario {i+1}):", min_value=1, value=durata_giorni, key=f"m_giorni_{i}_{unique_key}")
                 
             em_macc_i = fe_macc_8h * num_macc_input * giorni_macc
             em_macchinari += em_macc_i
@@ -442,9 +443,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_energia_fe = next((c for c in df_lci['Energia'].columns if 'fattore' in str(c).lower()), df_lci['Energia'].columns[1])
     col_energia_nome = df_lci['Energia'].columns[0]
     
-    tech_energia = st.selectbox("Tecnologia generazione elettrica:", df_lci['Energia'][col_energia_nome].unique(), key=f"tech_ene_{id_att}")
+    tech_energia = st.selectbox("Tecnologia generazione elettrica:", df_lci['Energia'][col_energia_nome].unique(), key=f"tech_ene_{unique_key}")
     fe_energia = float(str(df_lci['Energia'][df_lci['Energia'][col_energia_nome] == tech_energia][col_energia_fe].values[0]).replace(',', '.'))
-    kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0, key=f"kwh_{id_att}")
+    kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0, key=f"kwh_{unique_key}")
     em_energia = kwh_stimati * fe_energia
     
     df_sum_ene = pd.DataFrame({
@@ -464,9 +465,9 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_acqua_fe = next((c for c in df_lci['Acqua'].columns if 'fattore' in str(c).lower()), df_lci['Acqua'].columns[1])
     col_acqua_nome = df_lci['Acqua'].columns[0]
     
-    tech_acqua = st.selectbox("Approvvigionamento/Trattamento Acqua:", df_lci['Acqua'][col_acqua_nome].unique(), key=f"tech_acq_{id_att}")
+    tech_acqua = st.selectbox("Approvvigionamento/Trattamento Acqua:", df_lci['Acqua'][col_acqua_nome].unique(), key=f"tech_acq_{unique_key}")
     fe_acqua = float(str(df_lci['Acqua'][df_lci['Acqua'][col_acqua_nome] == tech_acqua][col_acqua_fe].values[0]).replace(',', '.'))
-    litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0, key=f"litri_{id_att}")
+    litri_stimati = st.number_input("Consumo idrico stimato (litri):", value=0.0, key=f"litri_{unique_key}")
     em_acqua = litri_stimati * fe_acqua
     
     df_sum_acq = pd.DataFrame({
@@ -502,7 +503,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             "Acqua": tech_acqua, "FE_Acqua": fe_acqua
         }
         
-        # Sostituzione dinamica: se la Label era già presente nei risultati (sia analizzata che caricata da file) viene rimossa e sostituita con quella nuova (sovrascrittura).
         lista_ris = [r for r in st.session_state.risultati_progettazione if r['Attività'] != row_att['Label_Attivita']]
         lista_ris.append(record)
         st.session_state.risultati_progettazione = sorted(lista_ris, key=lambda x: x['Data Inizio'])
@@ -518,7 +518,7 @@ if st.session_state.risultati_progettazione:
     df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
     st.dataframe(df_risultati, use_container_width=True)
     
-    # PULSANTE DI ESPORTAZIONE (Aggiunto per poter salvare il CSV con eventuali ricalcoli/sovrascritture)
+    # PULSANTE DI ESPORTAZIONE
     csv_export = df_risultati.to_csv(index=False).encode('utf-8-sig')
     st.download_button(
         label="📥 Scarica CSV Analisi Aggiornata (Esporta per il futuro)",
