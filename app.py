@@ -793,19 +793,30 @@ if st.session_state.risultati_progettazione:
     if st.button("Elabora Dati Sensori e Genera Grafici di Confronto", use_container_width=True):
         df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
         
-        # 1. TIMELINE PROGETTUALE (Stime spalmate sui giorni di lavoro)
+        # 1. TIMELINE PROGETTUALE (Stime spalmate sui giorni di lavoro con associazione dell'Attività)
         dati_prog = []
         for _, row in df_risultati.iterrows():
             giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
             n_g = len(giorni_lavoro) if len(giorni_lavoro) > 0 else 1
             for g in giorni_lavoro:
                 dati_prog.append({
-                    'Data': g.date(), 'Materiali': row["Materiali [kgCO₂ eq]"]/n_g, 'Rifiuti': row["Rifiuti [kgCO₂ eq]"]/n_g,
-                    'Macchinari': row["Macchinari [kgCO₂ eq]"]/n_g, 'Trasporti_Prog': row["Trasporti [kgCO₂ eq]"]/n_g,
-                    'Energia_Prog': row["Energia [kgCO₂ eq]"]/n_g, 'Acqua_Prog': row["Acqua [kgCO₂ eq]"]/n_g
+                    'Data': g.date(), 'Attività': row['Attività'], 'Materiali': row["Materiali [kgCO₂ eq]"]/n_g, 
+                    'Rifiuti': row["Rifiuti [kgCO₂ eq]"]/n_g, 'Macchinari': row["Macchinari [kgCO₂ eq]"]/n_g, 
+                    'Trasporti_Prog': row["Trasporti [kgCO₂ eq]"]/n_g, 'Energia_Prog': row["Energia [kgCO₂ eq]"]/n_g, 
+                    'Acqua_Prog': row["Acqua [kgCO₂ eq]"]/n_g
                 })
         
-        df_comp = pd.DataFrame(dati_prog).groupby('Data').sum().reset_index() if dati_prog else pd.DataFrame(columns=['Data'])
+        if dati_prog:
+            df_comp_prog = pd.DataFrame(dati_prog)
+            agg_dict = {
+                'Materiali': 'sum', 'Rifiuti': 'sum', 'Macchinari': 'sum', 
+                'Trasporti_Prog': 'sum', 'Energia_Prog': 'sum', 'Acqua_Prog': 'sum'
+            }
+            # Unisce i nomi delle attività svolte in quella specifica giornata per mantenerle nel Tooltip
+            agg_dict['Attività'] = lambda x: ' | '.join(sorted(set(x)))
+            df_comp = df_comp_prog.groupby('Data').agg(agg_dict).reset_index()
+        else:
+            df_comp = pd.DataFrame(columns=['Data', 'Attività'])
         
         # 2. LETTURA SENSORI CANTIERE
         df_cant_t, df_cant_e, df_cant_a = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -826,6 +837,11 @@ if st.session_state.risultati_progettazione:
             
         for col in ['Trasporti_Cant', 'Energia_Cant', 'Acqua_Cant', 'Materiali', 'Rifiuti', 'Macchinari', 'Trasporti_Prog', 'Energia_Prog', 'Acqua_Prog']:
             if col not in df_comp: df_comp[col] = 0
+            
+        if 'Attività' not in df_comp:
+            df_comp['Attività'] = ""
+        else:
+            df_comp['Attività'] = df_comp['Attività'].fillna("")
             
         df_comp['Totale_Prog'] = df_comp['Materiali'] + df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Prog'] + df_comp['Energia_Prog'] + df_comp['Acqua_Prog']
         df_comp['Totale_Cant'] = df_comp['Materiali'] + df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Cant'] + df_comp['Energia_Cant'] + df_comp['Acqua_Cant']
@@ -903,15 +919,37 @@ if st.session_state.risultati_progettazione:
             ''', unsafe_allow_html=True)
             # --- FINE RIQUADRO ---
 
-            cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana']]
-            df_weekly = df_comp_filtered.groupby('Settimana')[cols_to_sum].sum().reset_index()
+            cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana', 'Attività']]
+            agg_dict_weekly = {c: 'sum' for c in cols_to_sum}
+            
+            # Aggrego anche l'Attività rimuovendo duplicati nella singola settimana
+            if 'Attività' in df_comp_filtered.columns:
+                agg_dict_weekly['Attività'] = lambda x: '<br>'.join(sorted(set([item.strip() for sublist in x.dropna() if sublist for item in sublist.split(' | ')])))
+
+            df_weekly = df_comp_filtered.groupby('Settimana').agg(agg_dict_weekly).reset_index()
             
             # --- GRAFICI DI CONFRONTO SETTIMANALI ---
             def plot_comparison(df, base_col, title, c_prog, c_cant):
                 fig = go.Figure()
+                custom_data = df['Attività'] if 'Attività' in df.columns else [''] * len(df)
+                
                 if f"{base_col}_Prog" in df: 
-                    fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Prog'], name='Dati stimati', marker_color=c_prog))
-                fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Cant'], name='Dati reali', marker_color=c_cant))
+                    fig.add_trace(go.Bar(
+                        x=df['Settimana'], 
+                        y=df[f'{base_col}_Prog'], 
+                        name='Dati stimati', 
+                        marker_color=c_prog,
+                        customdata=custom_data,
+                        hovertemplate="%{y:,.2f} kgCO₂ eq<br><b>Attività del periodo:</b><br>%{customdata}<extra></extra>"
+                    ))
+                fig.add_trace(go.Bar(
+                    x=df['Settimana'], 
+                    y=df[f'{base_col}_Cant'], 
+                    name='Dati reali', 
+                    marker_color=c_cant,
+                    customdata=custom_data,
+                    hovertemplate="%{y:,.2f} kgCO₂ eq<br><b>Attività del periodo:</b><br>%{customdata}<extra></extra>"
+                ))
                 
                 if opzione_linee in ["Media Costante", "Entrambe"]:
                     if f"{base_col}_Prog" in df: 
@@ -933,7 +971,8 @@ if st.session_state.risultati_progettazione:
                 st.plotly_chart(plot_comparison(df_weekly, 'Altri', "GWP Altri Processi: Progetto vs Reale", "#01796F", "#8CD6C4"), use_container_width=True)
             
             col_g1, col_g2 = st.columns(2)
-            col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#818cf8", "#3730a3"), use_container_width=True)
+            # Modificato il colore dei Trasporti Prog per usare lo stesso grigio chiaro specificato nella documentazione 
+            col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#D1D0CE", "#3730a3"), use_container_width=True)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Acqua', "Acqua", "#0369a1", "#b8edea"), use_container_width=True)
             col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#FFD700", "#a16207"), use_container_width=True)
             
