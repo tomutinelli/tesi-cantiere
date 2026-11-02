@@ -910,7 +910,7 @@ if st.session_state.risultati_progettazione:
             def plot_comparison(df, base_col, title, c_prog, c_cant):
                 fig = go.Figure()
                 if f"{base_col}_Prog" in df: 
-                    fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Prog'], name='Dati ipotizzati', marker_color=c_prog))
+                    fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Prog'], name='Dati stimati', marker_color=c_prog))
                 fig.add_trace(go.Bar(x=df['Settimana'], y=df[f'{base_col}_Cant'], name='Dati reali', marker_color=c_cant))
                 
                 if opzione_linee in ["Media Costante", "Entrambe"]:
