@@ -27,6 +27,8 @@ if 'configurazioni_salvate' not in st.session_state:
     st.session_state.configurazioni_salvate = {}
 if 'df_comp_cantiere' not in st.session_state:
     st.session_state.df_comp_cantiere = None
+if 'loaded_file_name' not in st.session_state:
+    st.session_state.loaded_file_name = None
 
 # COLORI GRAFICI (Allineati alla foto fornita)
 colori_parametri = {
@@ -75,23 +77,44 @@ if err_msg:
 st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
 st.subheader("1. Caricamento File di Progetto")
 
-# RIQUADRO INFORMATIVO 1
+# RIQUADRO INFORMATIVO 1 (Aggiornato per includere la nuova funzione)
 st.markdown("""
 <div style='background-color: #eef2f3; padding: 15px; border-left: 5px solid #2980b9; border-radius: 4px; margin-bottom: 20px;'>
     <strong>Istruzioni di Formattazione CSV (Fase di Progetto):</strong>
     <ul style='margin-top: 5px; margin-bottom: 0px;'>
-        <li><strong>Formato Generale:</strong> I file devono essere <code>.csv</code> (separati da virgola <code>,</code> o punto e virgola <code>;</code>).</li>
-        <li><strong>Cronoprogramma:</strong> Deve includere le colonne: <em>ID attività, Nome (o attività), Nome struttura, WBS Lavorazione, WBS Materiale, Data d'inizio, Data di fine</em>.</li>
-        <li><strong>Abachi Quantità:</strong> Devono includere: <em>WBS Lavorazione, WBS Materiale, Struttura</em> (opzionale ma consigliata) e la colonna dei valori nominata con una di queste parole: <em>Massa, Peso, Quantità</em>.</li>
+        <li><strong>Nuova Analisi (Cronoprogramma e Abachi):</strong> I file devono essere <code>.csv</code>. Il Cronoprogramma deve includere: <em>ID attività, Nome, Struttura, WBS Lavorazione, WBS Materiale, Data d'inizio, Data di fine</em>. Gli abachi devono includere la colonna <em>Massa, Peso o Quantità</em>.</li>
+        <li><strong>Ripristino Analisi Precedente (NOVITÀ):</strong> Carica il file riassuntivo esportato in precedenza (es. <code>2026-10-24T12-23_export.csv</code>) per visualizzare subito i risultati e i grafici. Potrai comunque selezionare le attività per ricalcolarne i valori e sovrascrivere i risultati.</li>
     </ul>
 </div>
 """, unsafe_allow_html=True)
 
-file_caricati = st.file_uploader("Carica i file CSV (Quantità Materiali e Cronoprogramma)", type=['csv'], accept_multiple_files=True)
+col_up1, col_up2 = st.columns(2)
+with col_up1:
+    file_caricati = st.file_uploader("Opzione A: Carica Cronoprogramma e Quantità (CSV)", type=['csv'], accept_multiple_files=True)
+with col_up2:
+    file_precedente = st.file_uploader("Opzione B: Carica un'Analisi Precedente (CSV)", type=['csv'])
 
 lista_quantita = []
 df_crono = None
 
+# GESTIONE CARICAMENTO ANALISI PRECEDENTE
+if file_precedente:
+    # Evita di ricaricare il file se l'utente salva un ricalcolo e la pagina si aggiorna
+    if st.session_state.loaded_file_name != file_precedente.name:
+        try:
+            df_prec = pd.read_csv(file_precedente, sep=None, engine='python')
+            if 'Attività' in df_prec.columns and 'Data Inizio' in df_prec.columns:
+                df_prec['Data Inizio'] = pd.to_datetime(df_prec['Data Inizio'], errors='coerce').dt.date
+                df_prec['Data Fine'] = pd.to_datetime(df_prec['Data Fine'], errors='coerce').dt.date
+                
+                # Sostituisce i risultati in sessione
+                st.session_state.risultati_progettazione = df_prec.to_dict('records')
+                st.session_state.loaded_file_name = file_precedente.name
+                
+        except Exception as e:
+            st.error(f"Errore nella lettura dell'analisi precedente: {e}")
+
+# GESTIONE CARICAMENTO FILE DI PROGETTO (CRONO + QUANTITÀ)
 if file_caricati:
     for f in file_caricati:
         try:
@@ -123,6 +146,7 @@ if file_caricati:
 
 df_quantita = pd.concat(lista_quantita, ignore_index=True) if lista_quantita else None
 
+# COSTRUZIONE/ELABORAZIONE CRONOPROGRAMMA
 if df_crono is not None:
     col_inizio = next((c for c in df_crono.columns if 'inizio' in str(c).lower()), None)
     col_fine = next((c for c in df_crono.columns if 'fine' in str(c).lower()), None)
@@ -141,7 +165,6 @@ if df_crono is not None:
             etichette = df_crono[col_id].astype(str) + " - " + df_crono[col_nome].astype(str)
             if col_struttura: etichette += " | " + df_crono[col_struttura].astype(str)
             
-                
             df_crono['Label_Attivita'] = etichette
             
             if df_quantita is not None:
@@ -153,8 +176,24 @@ if df_crono is not None:
             df_crono = None
     else:
         st.error("Impossibile trovare le colonne delle date nel cronoprogramma.")
+# Se non c'è crono caricato, ma è stata caricata l'analisi precedente, ricostruisce il crono fittizio per abilitare i ricalcoli
+elif file_precedente and 'risultati_progettazione' in st.session_state and st.session_state.risultati_progettazione:
+    df_prec = pd.DataFrame(st.session_state.risultati_progettazione)
+    df_crono = pd.DataFrame({
+        'ID': df_prec['ID'] if 'ID' in df_prec.columns else df_prec.index,
+        'Nome': df_prec['Nome'] if 'Nome' in df_prec.columns else df_prec['Attività'],
+        'Struttura': df_prec['Struttura'] if 'Struttura' in df_prec.columns else '',
+        'WBS Lav': df_prec['WBS_L'] if 'WBS_L' in df_prec.columns else '',
+        'WBS Materiale': df_prec['WBS_M'] if 'WBS_M' in df_prec.columns else '',
+        'Data_Inizio_Calc': pd.to_datetime(df_prec['Data Inizio']),
+        'Data_Fine_Calc': pd.to_datetime(df_prec['Data Fine']),
+        'Durata': df_prec['Durata'] if 'Durata' in df_prec.columns else 1,
+        'Label_Attivita': df_prec['Attività']
+    })
+    st.success(f"Dati dell'analisi precedente ripristinati! Trovate {len(df_prec)} attività per visualizzazione o ricalcolo.")
 else:
-    st.info("Carica i file CSV per iniziare.")
+    st.info("Carica i file CSV per iniziare o ripristinare un'analisi.")
+
 st.markdown("</div>", unsafe_allow_html=True)
 
 # --- SEZIONE 2: COMPILAZIONE ATTIVITA' ---
@@ -162,7 +201,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     st.markdown("<div class='minimal-card'>", unsafe_allow_html=True)
     st.subheader("2. Analisi Attività (Fase di Progettazione)")
     
-    attivita_selezionata = st.selectbox("Scegli la lavorazione dal cronoprogramma:", df_crono['Label_Attivita'].tolist())
+    attivita_selezionata = st.selectbox("Scegli la lavorazione dal cronoprogramma (per calcolo o ricalcolo):", df_crono['Label_Attivita'].tolist())
     
     row_att = df_crono[df_crono['Label_Attivita'] == attivita_selezionata].iloc[0]
     
@@ -440,7 +479,7 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     st.dataframe(df_sum_acq, hide_index=True)
     
     st.markdown("---")
-    if st.button("Salva Calcolo per questa Attività", use_container_width=True):
+    if st.button("Salva (o Sovrascrivi) Calcolo per questa Attività", use_container_width=True):
         totale_eq = em_materiali + em_rifiuti + em_macchinari + em_trasporti + em_energia + em_acqua
         
         record = {
@@ -463,10 +502,11 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
             "Acqua": tech_acqua, "FE_Acqua": fe_acqua
         }
         
+        # Sostituzione dinamica: se la Label era già presente nei risultati (sia analizzata che caricata da file) viene rimossa e sostituita con quella nuova (sovrascrittura).
         lista_ris = [r for r in st.session_state.risultati_progettazione if r['Attività'] != row_att['Label_Attivita']]
         lista_ris.append(record)
         st.session_state.risultati_progettazione = sorted(lista_ris, key=lambda x: x['Data Inizio'])
-        st.success("Attività salvata con successo! Scorri in basso per i risultati aggiornati.")
+        st.success("Attività salvata/sovrascritta con successo! Scorri in basso per i risultati aggiornati.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -477,6 +517,16 @@ if st.session_state.risultati_progettazione:
     
     df_risultati = pd.DataFrame(st.session_state.risultati_progettazione)
     st.dataframe(df_risultati, use_container_width=True)
+    
+    # PULSANTE DI ESPORTAZIONE (Aggiunto per poter salvare il CSV con eventuali ricalcoli/sovrascritture)
+    csv_export = df_risultati.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 Scarica CSV Analisi Aggiornata (Esporta per il futuro)",
+        data=csv_export,
+        file_name="risultati_analisi_cantiere.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
     
     # SPLIT TOTALI PROGETTAZIONE
     gwp_totale = df_risultati["Totale [kgCO₂ eq]"].sum()
@@ -497,8 +547,8 @@ if st.session_state.risultati_progettazione:
     st.markdown("#### Filtro Temporale Grafici e Opzioni Visualizzazione")
     col_fil1, col_fil2, col_fil3 = st.columns([1, 1, 1])
     
-    min_date = df_risultati['Data Inizio'].min()
-    max_date = df_risultati['Data Fine'].max()
+    min_date = pd.to_datetime(df_risultati['Data Inizio']).min()
+    max_date = pd.to_datetime(df_risultati['Data Fine']).max()
     
     with col_fil1:
         date_range = st.date_input(
@@ -784,7 +834,7 @@ if st.session_state.risultati_progettazione:
         # Salvataggio nel session_state
         st.session_state.df_comp_cantiere = df_comp
 
-# IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE E HA IL FILTRO TEMPORALE
+    # IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE E HA IL FILTRO TEMPORALE
     if st.session_state.df_comp_cantiere is not None:
         df_comp = st.session_state.df_comp_cantiere.copy()
         df_comp['Data'] = pd.to_datetime(df_comp['Data'])
