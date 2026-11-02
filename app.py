@@ -18,7 +18,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("EcoSite Tracker")
-st.markdown("Monitoraggio Emissioni CO₂ in fase operativa. Confronto tra i dati stimati in fase di Progettazione con i dati reali di cantiere misurati tramite sensoristica.
+st.markdown("Monitoraggio Emissioni CO₂ in fase operativa. Confronto tra i dati stimati in fase di Progettazione con i dati reali di cantiere misurati tramite sensoristica.")
             
 # --- INIZIALIZZAZIONE SESSION STATE ---
 if 'risultati_progettazione' not in st.session_state:
