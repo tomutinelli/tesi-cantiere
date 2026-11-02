@@ -691,7 +691,7 @@ if st.session_state.risultati_progettazione:
     <div style='background-color: #eef2f3; padding: 15px; border-left: 5px solid #27ae60; border-radius: 4px; margin-bottom: 20px;'>
         <strong>Istruzioni di Formattazione CSV (Dati Sensori):</strong>
         <ul style='margin-top: 5px; margin-bottom: 0px;'>
-            <li><strong>Intestazione:</strong> Tutte le tabelle devono riportare le colonne <em>ID attività</em> (o una colonna contenente "id") e <em>Data</em> per potersi allacciare al calcolo in progetto.</li>
+            <li><strong>Intestazione:</strong> Tutte le tabelle devono riportare le colonne <em>ID attività</em> e <em>Data</em> per potersi allacciare al calcolo in progetto.</li>
             <li><strong>Trasporti:</strong> Colonna nominata <em>Km_percorsi</em> e colonna <em>Carburante</em> per prelevare in automatico i fattori emissivi dal database LCI.</li>
             <li><strong>Energia:</strong> Colonna <em>consumi_kWh</em> (o simile) e <em>Alimentazione_elettrica</em>.</li>
             <li><strong>Acqua:</strong> Colonna <em>consumi_l</em> (o simile) e <em>Tipo_acqua</em> (Treatment o Supply).</li>
@@ -707,13 +707,10 @@ if st.session_state.risultati_progettazione:
     def elabora_sensore_con_attivita(df_sens, tipo_file, df_lci, df_ris, conf_salvate):
         risultati = []
         
-        # Pulizia intestazioni del CSV sensore per sicurezza
-        df_sens.columns = [str(c).strip() for c in df_sens.columns]
-        
-        # Individua dinamicamente la colonna ID (cerca 'id' ovunque nella stringa della colonna)
-        col_id = next((c for c in df_sens.columns if 'id' in str(c).lower()), None)
+        # Individua dinamicamente la colonna ID e Data
+        col_id = next((c for c in df_sens.columns if 'id' in str(c).lower() and 'attiv' in str(c).lower()), None)
         if not col_id:
-            col_id = df_sens.columns[0] # Fallback sulla prima colonna se non trova 'id'
+            col_id = next((c for c in df_sens.columns if 'id' in str(c).lower()), df_sens.columns[0])
             
         col_data = next((c for c in df_sens.columns if 'data' in str(c).lower()), None)
         
@@ -727,17 +724,12 @@ if st.session_state.risultati_progettazione:
             id_sensore = str(row[col_id]).strip()
             data_sensore = row[col_data].date()
             
-            # Cerca l'ID nel database di progetto (confrontando sia l'ID intero che parte della stringa)
+            # Cerca l'ID nel database di progetto per recuperare l'etichetta dell'attività
             match_prog = df_ris[df_ris['ID'].astype(str).str.strip() == id_sensore]
             if match_prog.empty:
-                # Tentativo di fallback: cerca se l'ID è contenuto nell'etichetta dell'attività o viceversa
-                match_prog = df_ris[df_ris['Attività'].astype(str).str.contains(id_sensore, case=False, na=False)]
+                continue 
                 
-            if not match_prog.empty:
-                label_attivita = match_prog.iloc[0]['Attività']
-            else:
-                label_attivita = f"Attività ID: {id_sensore}" # Fallback visivo se l'ID non fa match perfetto
-                
+            label_attivita = match_prog.iloc[0]['Attività']
             conf = conf_salvate.get(label_attivita, {})
             
             emissione = 0
@@ -789,6 +781,7 @@ if st.session_state.risultati_progettazione:
                 risultati.append({'Data': data_sensore, 'Attività': label_attivita, 'Acqua_Cant': emissione})
                 
         if risultati:
+            # Aggrego giornalmente i dati misurati
             df_ris_grouped = pd.DataFrame(risultati)
             agg_dict = {}
             if 'Trasporti_Cant' in df_ris_grouped.columns: agg_dict['Trasporti_Cant'] = 'sum'
@@ -822,6 +815,7 @@ if st.session_state.risultati_progettazione:
                 'Materiali': 'sum', 'Rifiuti': 'sum', 'Macchinari': 'sum', 
                 'Trasporti_Prog': 'sum', 'Energia_Prog': 'sum', 'Acqua_Prog': 'sum'
             }
+            # Unisce i nomi delle attività svolte in quella specifica giornata per mantenerle nel Tooltip
             agg_dict['Attività_Prog'] = lambda x: ' | '.join(sorted(set(x)))
             df_comp = df_comp_prog.groupby('Data').agg(agg_dict).reset_index()
         else:
@@ -833,6 +827,7 @@ if st.session_state.risultati_progettazione:
         if file_energia: df_cant_e = elabora_sensore_con_attivita(pd.read_csv(file_energia), 'energia', df_lci, df_risultati, st.session_state.configurazioni_salvate)
         if file_acqua: df_cant_a = elabora_sensore_con_attivita(pd.read_csv(file_acqua), 'acqua', df_lci, df_risultati, st.session_state.configurazioni_salvate)
         
+        # Rinomino le colonne delle attività del cantiere
         if not df_cant_t.empty: df_cant_t = df_cant_t.rename(columns={'Attività': 'Attività_Cant_T'})
         if not df_cant_e.empty: df_cant_e = df_cant_e.rename(columns={'Attività': 'Attività_Cant_E'})
         if not df_cant_a.empty: df_cant_a = df_cant_a.rename(columns={'Attività': 'Attività_Cant_A'})
@@ -843,9 +838,11 @@ if st.session_state.risultati_progettazione:
         if not df_cant_e.empty: df_sensors = pd.merge(df_sensors, df_cant_e, on='Data', how='outer')
         if not df_cant_a.empty: df_sensors = pd.merge(df_sensors, df_cant_a, on='Data', how='outer')
         
+        # Unisco le attività del cantiere in un'unica colonna
         cols_cant_att = [c for c in ['Attività_Cant_T', 'Attività_Cant_E', 'Attività_Cant_A'] if c in df_sensors.columns]
         if cols_cant_att:
             df_sensors['Attività_Cant'] = df_sensors[cols_cant_att].fillna('').apply(lambda x: ' | '.join(filter(None, x)), axis=1)
+            # Rimuovo i duplicati nella stringa combinata
             df_sensors['Attività_Cant'] = df_sensors['Attività_Cant'].apply(lambda x: ' | '.join(sorted(set(item.strip() for item in x.split(' | ') if item.strip()))))
             df_sensors = df_sensors.drop(columns=cols_cant_att)
         
@@ -857,6 +854,7 @@ if st.session_state.risultati_progettazione:
         for col in ['Trasporti_Cant', 'Energia_Cant', 'Acqua_Cant', 'Materiali', 'Rifiuti', 'Macchinari', 'Trasporti_Prog', 'Energia_Prog', 'Acqua_Prog']:
             if col not in df_comp: df_comp[col] = 0
             
+        # Combino le attività di progetto e cantiere per il tooltip finale
         if 'Attività_Prog' not in df_comp: df_comp['Attività_Prog'] = ""
         if 'Attività_Cant' not in df_comp: df_comp['Attività_Cant'] = ""
         
@@ -867,6 +865,7 @@ if st.session_state.risultati_progettazione:
         df_comp['Totale_Cant'] = df_comp['Materiali'] + df_comp['Rifiuti'] + df_comp['Macchinari'] + df_comp['Trasporti_Cant'] + df_comp['Energia_Cant'] + df_comp['Acqua_Cant']
         df_comp = df_comp.sort_values('Data')
 
+        # Salvataggio nel session_state
         st.session_state.df_comp_cantiere = df_comp
 
     # IL BLOCCO DEI GRAFICI ORA DIPENDE DAL SESSION_STATE E HA IL FILTRO TEMPORALE
@@ -877,6 +876,7 @@ if st.session_state.risultati_progettazione:
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("Confronto Emissioni Settimanali: Progettazione vs Cantiere Reale")
         
+        # --- FILTRO TEMPORALE E OPZIONI ---
         min_date_c = df_comp['Data'].min().date() if not df_comp.empty else pd.Timestamp.now().date()
         max_date_c = df_comp['Data'].max().date() if not df_comp.empty else pd.Timestamp.now().date()
         
@@ -904,14 +904,18 @@ if st.session_state.risultati_progettazione:
         else:
             start_filter_c, end_filter_c = min_date_c, max_date_c
             
+        # Filtro il DataFrame in base alle date scelte
         df_comp_filtered = df_comp[(df_comp['Data'].dt.date >= start_filter_c) & (df_comp['Data'].dt.date <= end_filter_c)].copy()
         
         if not df_comp_filtered.empty:
+            # Creazione colonna Settimana e Raggruppamento
             df_comp_filtered['Settimana'] = df_comp_filtered['Data'].dt.strftime('%Y-W%V')
             
+            # Calcolo le colonne per "Altri Processi" per Progetto e Cantiere
             df_comp_filtered['Altri_Prog'] = df_comp_filtered['Rifiuti'] + df_comp_filtered['Macchinari'] + df_comp_filtered['Trasporti_Prog'] + df_comp_filtered['Energia_Prog'] + df_comp_filtered['Acqua_Prog']
             df_comp_filtered['Altri_Cant'] = df_comp_filtered['Rifiuti'] + df_comp_filtered['Macchinari'] + df_comp_filtered['Trasporti_Cant'] + df_comp_filtered['Energia_Cant'] + df_comp_filtered['Acqua_Cant']
             
+            # --- INSERIMENTO RIQUADRO RIEPILOGATIVO CONFRONTO ---
             gwp_embodied_cant = df_comp_filtered['Materiali'].sum()
             gwp_altre_prog = df_comp_filtered['Altri_Prog'].sum()
             gwp_altre_cant = df_comp_filtered['Altri_Cant'].sum()
@@ -931,15 +935,18 @@ if st.session_state.risultati_progettazione:
                 </ul>
             </div>
             ''', unsafe_allow_html=True)
+            # --- FINE RIQUADRO ---
 
             cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana', 'Attività', 'Attività_Prog', 'Attività_Cant']]
             agg_dict_weekly = {c: 'sum' for c in cols_to_sum}
             
+            # Aggrego anche l'Attività rimuovendo duplicati nella singola settimana
             if 'Attività' in df_comp_filtered.columns:
                 agg_dict_weekly['Attività'] = lambda x: '<br>'.join(sorted(set([item.strip() for sublist in x.dropna() if sublist for item in sublist.split(' | ')])))
 
             df_weekly = df_comp_filtered.groupby('Settimana').agg(agg_dict_weekly).reset_index()
             
+            # --- GRAFICI DI CONFRONTO SETTIMANALI ---
             def plot_comparison(df, base_col, title, c_prog, c_cant):
                 fig = go.Figure()
                 custom_data = df['Attività'] if 'Attività' in df.columns else [''] * len(df)
@@ -975,6 +982,7 @@ if st.session_state.risultati_progettazione:
                 fig.update_layout(title=title, barmode='group', hovermode="x unified", xaxis_title="Settimana", yaxis_title="Emissioni [kgCO₂ eq]")
                 return fig
 
+            # Logica di visualizzazione in base al menù a tendina
             if ambito_gwp_cant == "GWP Totale":
                 st.plotly_chart(plot_comparison(df_weekly, 'Totale', "GWP Totale: Progetto vs Reale", "#01796F", "#8CD6C4"), use_container_width=True)
             else:
@@ -983,6 +991,6 @@ if st.session_state.risultati_progettazione:
             col_g1, col_g2 = st.columns(2)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Trasporti', "Trasporti", "#D1D0CE", "#707070"), use_container_width=True)
             col_g1.plotly_chart(plot_comparison(df_weekly, 'Acqua', "Acqua", "#0369a1", "#b8edea"), use_container_width=True)
-            col_g2.plotly_chart(plot_keyword := plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#FFD700", "#a16207"), use_container_width=True)
+            col_g2.plotly_chart(plot_comparison(df_weekly, 'Energia', "Energia Elettrica", "#FFD700", "#a16207"), use_container_width=True)
             
     st.markdown("</div>", unsafe_allow_html=True)
