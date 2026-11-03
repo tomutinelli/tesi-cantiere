@@ -231,7 +231,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
         q_rifiuti = quantita_mat * perc_rifiuti
         em_rifiuti = q_rifiuti * fattore_em_rif
 
-    # Trasporti e Macchinari semplificati per brevità ma completi
     if 'Trasporti' in df_lci:
         df_t_sheet = df_lci['Trasporti']
         df_t_emissions = df_t_sheet.iloc[0:9].copy()
@@ -259,7 +258,6 @@ if df_crono is not None and df_epd is not None and df_lci is not None:
     col_durata = next((c for c in df_crono.columns if 'durata' in str(c).lower()), None)
     durata_giorni = int(row_att[col_durata]) if col_durata else 1
     
-    # Energia e Acqua
     tech_energia = st.selectbox("Tecnologia generazione elettrica:", df_lci['Energia'].iloc[:, 0].unique(), key=f"tech_e_{unique_key}")
     fe_energia = float(str(df_lci['Energia'][df_lci['Energia'].iloc[:, 0] == tech_energia].iloc[0, 1]).replace(',', '.'))
     kwh_stimati = st.number_input("Consumo elettrico stimato (kWh):", value=0.0, key=f"kwh_{unique_key}")
@@ -424,6 +422,12 @@ if st.session_state.risultati_progettazione:
         df_comp = st.session_state.df_comp_cantiere.copy()
         df_comp['Data'] = pd.to_datetime(df_comp['Data'])
         
+        # --- FIX RETROCOMPATIBILITÀ CACHE ---
+        # Se l'app ha in memoria il dataframe della versione precedente, creiamo la colonna mancante
+        if 'Attività_Unica' not in df_comp.columns:
+            df_comp['Attività_Unica'] = df_comp['Attività'] if 'Attività' in df_comp.columns else ""
+        # ------------------------------------
+        
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("Confronto Emissioni Settimanali: Progettazione vs Cantiere Reale")
         
@@ -444,7 +448,9 @@ if st.session_state.risultati_progettazione:
             df_comp_filtered['Altri_Prog'] = df_comp_filtered['Rifiuti'] + df_comp_filtered['Macchinari'] + df_comp_filtered['Trasporti_Prog'] + df_comp_filtered['Energia_Prog'] + df_comp_filtered['Acqua_Prog']
             df_comp_filtered['Altri_Cant'] = df_comp_filtered['Rifiuti'] + df_comp_filtered['Macchinari'] + df_comp_filtered['Trasporti_Cant'] + df_comp_filtered['Energia_Cant'] + df_comp_filtered['Acqua_Cant']
             
-            agg_dict_weekly = {c: 'sum' for c in df_comp_filtered.columns if c not in ['Data', 'Settimana', 'Attività_Unica', 'Attività_Prog', 'Attività_Cant', 'Attività_Cant_Temp']}
+            # Assicuriamoci di escludere anche 'Attività' per evitare il KeyError su vecchi session_state
+            cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana', 'Attività_Unica', 'Attività_Prog', 'Attività_Cant', 'Attività_Cant_Temp', 'Attività']]
+            agg_dict_weekly = {c: 'sum' for c in cols_to_sum}
             agg_dict_weekly['Attività_Unica'] = lambda x: '<br>'.join(sorted(set(item.strip() for sub in x.dropna() for item in str(sub).split('<br>') if item.strip())))
 
             df_weekly = df_comp_filtered.groupby('Settimana').agg(agg_dict_weekly).reset_index()
