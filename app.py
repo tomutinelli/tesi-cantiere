@@ -1,4 +1,4 @@
-import streamlit as st
+<import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -564,6 +564,36 @@ if st.session_state.risultati_progettazione:
     else:
         start_filter, end_filter = min_date, max_date
 
+    # --- INSERIMENTO DIAGRAMMA DI GANTT ---
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown("#### Cronoprogramma di Progetto (Diagramma di Gantt)")
+    
+    # Filtriamo il dataframe originale in base al periodo selezionato
+    df_gantt = df_risultati.copy()
+    df_gantt['Data Inizio'] = pd.to_datetime(df_gantt['Data Inizio'])
+    df_gantt['Data Fine'] = pd.to_datetime(df_gantt['Data Fine'])
+    
+    # Mantieni solo le attività che intersecano l'intervallo selezionato
+    df_gantt = df_gantt[(df_gantt['Data Fine'].dt.date >= start_filter) & (df_gantt['Data Inizio'].dt.date <= end_filter)]
+    
+    if not df_gantt.empty:
+        # Ordiniamo per data di inizio per una migliore visualizzazione
+        df_gantt = df_gantt.sort_values(by='Data Inizio', ascending=False)
+        
+        fig_gantt = px.timeline(
+            df_gantt, 
+            x_start="Data Inizio", 
+            x_end="Data Fine", 
+            y="Attività",
+            title="Sviluppo temporale delle attività (Gantt)",
+            color_discrete_sequence=["#2980b9"]
+        )
+        fig_gantt.update_yaxes(autorange="reversed") # L'attività più vecchia in alto
+        st.plotly_chart(fig_gantt, use_container_width=True)
+    else:
+        st.info("Nessuna attività nel periodo selezionato per visualizzare il cronoprogramma.")
+    # --------------------------------------
+
     dati_giornalieri = []
     for _, row in df_risultati.iterrows():
         giorni_lavoro = pd.bdate_range(start=row['Data Inizio'], end=row['Data Fine'])
@@ -873,6 +903,11 @@ if st.session_state.risultati_progettazione:
         df_comp = st.session_state.df_comp_cantiere.copy()
         df_comp['Data'] = pd.to_datetime(df_comp['Data'])
         
+        # --- FIX RETROCOMPATIBILITÀ CACHE ---
+        if 'Attività_Unica' not in df_comp.columns:
+            df_comp['Attività_Unica'] = df_comp['Attività'] if 'Attività' in df_comp.columns else ""
+        # ------------------------------------
+        
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("Confronto Emissioni Settimanali: Progettazione vs Cantiere Reale")
         
@@ -908,7 +943,6 @@ if st.session_state.risultati_progettazione:
         df_comp_filtered = df_comp[(df_comp['Data'].dt.date >= start_filter_c) & (df_comp['Data'].dt.date <= end_filter_c)].copy()
         
         if not df_comp_filtered.empty:
-            # Creazione colonna Settimana e Raggruppamento
             df_comp_filtered['Settimana'] = df_comp_filtered['Data'].dt.strftime('%Y-W%V')
             
             # Calcolo le colonne per "Altri Processi" per Progetto e Cantiere
@@ -937,34 +971,25 @@ if st.session_state.risultati_progettazione:
             ''', unsafe_allow_html=True)
             # --- FINE RIQUADRO ---
 
-            cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana', 'Attività', 'Attività_Prog', 'Attività_Cant']]
+            cols_to_sum = [c for c in df_comp_filtered.columns if c not in ['Data', 'Settimana', 'Attività_Unica', 'Attività_Prog', 'Attività_Cant', 'Attività_Cant_Temp', 'Attività']]
             agg_dict_weekly = {c: 'sum' for c in cols_to_sum}
-            
-            # Aggrego anche l'Attività rimuovendo duplicati nella singola settimana
-            if 'Attività' in df_comp_filtered.columns:
-                agg_dict_weekly['Attività'] = lambda x: '<br>'.join(sorted(set([item.strip() for sublist in x.dropna() if sublist for item in sublist.split(' | ')])))
+            agg_dict_weekly['Attività_Unica'] = lambda x: '<br>'.join(sorted(set(item.strip() for sub in x.dropna() for item in str(sub).split('<br>') if item.strip())))
 
             df_weekly = df_comp_filtered.groupby('Settimana').agg(agg_dict_weekly).reset_index()
             
-            # --- GRAFICI DI CONFRONTO SETTIMANALI ---
+            # --- FUNZIONE DI PLOT CON ALLINEAMENTO A SINISTRA PER TUTTI I GRAFICI ---
             def plot_comparison(df, base_col, title, c_prog, c_cant):
                 fig = go.Figure()
-                custom_data = df['Attività'] if 'Attività' in df.columns else [''] * len(df)
+                custom_data = df['Attività_Unica'] if 'Attività_Unica' in df.columns else [''] * len(df)
                 
                 if f"{base_col}_Prog" in df: 
                     fig.add_trace(go.Bar(
-                        x=df['Settimana'], 
-                        y=df[f'{base_col}_Prog'], 
-                        name='Dati stimati', 
-                        marker_color=c_prog,
+                        x=df['Settimana'], y=df[f'{base_col}_Prog'], name='Dati stimati', marker_color=c_prog,
                         customdata=custom_data,
                         hovertemplate="%{y:,.2f} kgCO₂ eq<br><b>Attività del periodo:</b><br>%{customdata}<extra></extra>"
                     ))
                 fig.add_trace(go.Bar(
-                    x=df['Settimana'], 
-                    y=df[f'{base_col}_Cant'], 
-                    name='Dati reali', 
-                    marker_color=c_cant,
+                    x=df['Settimana'], y=df[f'{base_col}_Cant'], name='Dati reali', marker_color=c_cant,
                     customdata=custom_data,
                     hovertemplate="%{y:,.2f} kgCO₂ eq<br><b>Attività del periodo:</b><br>%{customdata}<extra></extra>"
                 ))
@@ -979,7 +1004,12 @@ if st.session_state.risultati_progettazione:
                         fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Prog'].rolling(3, min_periods=1).mean(), name='Trend Prog', line=dict(color=c_prog, width=2)))
                     fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Cant'].rolling(3, min_periods=1).mean(), name='Trend Cant', line=dict(color=c_cant, width=2)))
                     
-                fig.update_layout(title=title, barmode='group', hovermode="x unified", xaxis_title="Settimana", yaxis_title="Emissioni [kgCO₂ eq]")
+                # ALLINEAMENTO A SINISTRA (text-align: left) PER TUTTI I TOOLTIP DEL GRAFICO
+                fig.update_layout(
+                    title=title, barmode='group', hovermode="x unified", 
+                    xaxis_title="Settimana", yaxis_title="Emissioni [kgCO₂ eq]",
+                    hoverlabel=dict(align="left")
+                )
                 return fig
 
             # Logica di visualizzazione in base al menù a tendina
