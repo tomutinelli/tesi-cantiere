@@ -976,8 +976,8 @@ if st.session_state.risultati_progettazione:
                 
                 if opzione_linee in ["Andamento Medio (Media Mobile)", "Entrambe"]:
                     if f"{base_col}_Prog" in df: 
-                        fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Prog'].rolling(3, min_periods=1).mean(), name='Trend Prog', line=dict(color=c_prog, width=2)))
-                    fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Cant'].rolling(3, min_periods=1).mean(), name='Trend Cant', line=dict(color=c_cant, width=2)))
+                        fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Prog'].rolling(3, min_periods=1).mean(), name='Trend dati stimati', line=dict(color=c_prog, width=2)))
+                    fig.add_trace(go.Scatter(x=df['Settimana'], y=df[f'{base_col}_Cant'].rolling(3, min_periods=1).mean(), name='Trend dati reali', line=dict(color=c_cant, width=2)))
                     
                 fig.update_layout(title=title, barmode='group', hovermode="x unified", xaxis_title="Settimana", yaxis_title="Emissioni [kgCO₂ eq]")
                 return fig
